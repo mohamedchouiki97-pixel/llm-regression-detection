@@ -12,6 +12,7 @@ from src.models import (
     GoldenCase,
     JudgeOutput,
     JudgeVerdict,
+    Split,
 )
 from src.scoring import JudgeError, build_judge_messages, estimate_cost, judge_summary, score_case
 
@@ -22,6 +23,7 @@ CASE = GoldenCase(
     ideal_summary="The customer was double charged and wants a refund.",
     difficulty=Difficulty.MEDIUM,
     tags=["typo"],
+    split=Split.TEST,
 )
 
 
@@ -79,6 +81,7 @@ def test_case_metadata_copied():
     assert result.expected_category is Category.BILLING
     assert result.difficulty is Difficulty.MEDIUM
     assert result.tags == ["typo"]
+    assert result.split is Split.TEST
     assert result.latency_ms == 512.0
     assert (result.input_tokens, result.output_tokens) == (1000, 100)
     assert result.cached

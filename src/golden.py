@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from src.models import Category, Difficulty, GoldenDataset
+from src.models import Category, Difficulty, GoldenDataset, Split
 
 DEFAULT_DATASET_PATH = Path(__file__).resolve().parent.parent / "data" / "golden.json"
 PLACEHOLDER_TAG = "placeholder"
@@ -139,9 +139,12 @@ def coverage_table(dataset: GoldenDataset) -> str:
     column_totals = [sum(grid[(c, d)] for c in Category) for d in difficulties]
     lines.append(f"{'total':<12}" + "".join(f"{n:>8}" for n in column_totals) + f"{total:>8}")
 
+    splits = Counter(case.split for case in dataset.cases)
+    lines.append("")
+    lines.append("split: " + ", ".join(f"{s.value} {splits[s]}" for s in Split))
+
     tags = Counter(tag for case in dataset.cases for tag in case.tags)
     # Sorted by count so rare tags, often typos, sink to the end.
     tag_text = ", ".join(f"{tag} {n}" for tag, n in sorted(tags.items(), key=lambda kv: (-kv[1], kv[0])))
-    lines.append("")
     lines.append(f"tags: {tag_text or '(none)'}")
     return "\n".join(lines)

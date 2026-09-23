@@ -65,6 +65,13 @@ class Difficulty(str, Enum):
     HARD = "hard"
 
 
+class Split(str, Enum):
+    """dev cases may be inspected while improving prompts; test cases are held out for measuring."""
+
+    DEV = "dev"
+    TEST = "test"
+
+
 class GoldenCase(BaseModel):
     """One hand-labeled test case. Ids are stable across dataset versions and never reused."""
 
@@ -77,6 +84,7 @@ class GoldenCase(BaseModel):
     difficulty: Difficulty
     tags: list[Tag] = Field(default_factory=list)
     notes: str = ""
+    split: Split
 
     @field_validator("tags")
     @classmethod
@@ -135,6 +143,7 @@ class CaseResult(BaseModel):
     passed: bool = False
     error: str | None = None
     difficulty: Difficulty
+    split: Split
     tags: list[str] = Field(default_factory=list)
     latency_ms: float | None = None
     input_tokens: int = 0

@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS case_results (
     passed INTEGER NOT NULL,
     error TEXT,
     difficulty TEXT NOT NULL,
+    split TEXT NOT NULL,
     tags TEXT NOT NULL,
     latency_ms REAL,
     input_tokens INTEGER NOT NULL,

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.models import CaseResult, Category, Difficulty, RunRecord
+from src.models import CaseResult, Category, Difficulty, RunRecord, Split
 from src.store import load_run, save_run
 
 
@@ -19,6 +19,7 @@ def make_run(run_id: str = "20260923T140211-abc123") -> RunRecord:
             judge_reasoning="Matches.",
             passed=True,
             difficulty=Difficulty.EASY,
+            split=Split.DEV,
             tags=["short", "typo"],
             latency_ms=412.5,
             input_tokens=500,
@@ -31,6 +32,7 @@ def make_run(run_id: str = "20260923T140211-abc123") -> RunRecord:
             expected_category=Category.ACCOUNT,
             error="classify: BadRequestError: bad",
             difficulty=Difficulty.HARD,
+            split=Split.TEST,
             cached=True,
         ),
     ]

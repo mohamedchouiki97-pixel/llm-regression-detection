@@ -101,6 +101,7 @@ def score_case(
         case_id=case.id,
         expected_category=case.expected_category,
         difficulty=case.difficulty,
+        split=case.split,
         tags=list(case.tags),
         cached=cached,
         error=error,

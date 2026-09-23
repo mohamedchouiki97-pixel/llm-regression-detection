@@ -115,6 +115,7 @@ def dataset(n: int = 6) -> GoldenDataset:
                     "expected_category": categories[i % 4].value,
                     "ideal_summary": f"ideal {i}",
                     "difficulty": "easy",
+                    "split": "dev",
                 }
                 for i in range(1, n + 1)
             ],

@@ -20,6 +20,7 @@ def make_case(n: int, category: str = "billing", difficulty: str = "easy", **ove
         "difficulty": difficulty,
         "tags": [],
         "notes": "",
+        "split": "dev",
     }
     case.update(overrides)
     return case
@@ -99,6 +100,7 @@ def test_top_level_must_be_object(tmp_path):
         ({"tags": ["Mixed-Language"]}, r"cases\[0\] \(gc-001\)\.tags\.0"),
         ({"tags": ["typo", "typo"]}, r"duplicate tags: typo"),
         ({"expected_catgory": "billing"}, r"expected_catgory"),
+        ({"split": "train"}, r"cases\[0\] \(gc-001\)\.split"),
     ],
 )
 def test_bad_case_field_is_named(tmp_path, override, expected):
@@ -248,6 +250,7 @@ def test_coverage_table_counts(tmp_path):
     assert rows["general"] == ["1", "1", "0", "2", "25.0%"]
     assert rows["total"] == ["3", "2", "3", "8"]
     # Most common first, ties alphabetical, so the rare typo sinks to the end.
+    assert lines[-2] == "split: dev 8, test 0"
     assert lines[-1] == "tags: typo 2, ambigous 1, short 1"
 
 
