@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-09-23",
+      "changes": "Seed file with 3 placeholder cases showing the format. Replace them with real cases. Never reuse a case id, even after deleting a case; gaps are fine."
+    }
+  ],
+  "cases": [
+    {
+      "id": "gc-001",
+      "email": "PLACEHOLDER: Hi, I was charged twice for my subscription this month. Please refund one of the charges.",
+      "expected_category": "billing",
+      "ideal_summary": "The customer was charged twice this month and wants one charge refunded.",
+      "difficulty": "easy",
+      "tags": ["placeholder"],
+      "notes": "Placeholder showing the format. Replace with a real hand-written case."
+    },
+    {
+      "id": "gc-002",
+      "email": "PLACEHOLDER: The export button does nothing when I click it. I tried two browsers.",
+      "expected_category": "technical",
+      "ideal_summary": "The customer reports that the export button does nothing in multiple browsers.",
+      "difficulty": "easy",
+      "tags": ["placeholder"],
+      "notes": "Placeholder showing the format. Replace with a real hand-written case."
+    },
+    {
+      "id": "gc-003",
+      "email": "PLACEHOLDER: How do I change the email address on my account?",
+      "expected_category": "account",
+      "ideal_summary": "The customer wants to change the email address on their account.",
+      "difficulty": "easy",
+      "tags": ["placeholder", "short"],
+      "notes": "Placeholder showing the format. Replace with a real hand-written case."
+    }
+  ]
+}

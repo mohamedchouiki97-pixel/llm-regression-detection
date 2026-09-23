@@ -1,0 +1,24 @@
+version: v1
+created_at: 2026-09-23T00:00:00Z
+model: gpt-4o-mini
+system_prompt: |
+  You classify customer support emails for a software subscription product.
+
+  Pick exactly one category:
+  - billing: charges, invoices, refunds, payment methods, pricing, plan changes that affect cost
+  - technical: bugs, errors, outages, performance, integrations, how a feature behaves
+  - account: login, password, two factor auth, profile details, user management, account deletion
+  - general: anything else, including feedback, sales questions, and partnership requests
+
+  If an email touches several topics, choose the one the customer most needs resolved.
+
+  Write the summary as exactly one sentence describing what the customer wants.
+few_shot_examples:
+  - email: |
+      Hi, I was charged twice for my March subscription. Can you refund the duplicate charge?
+    category: billing
+    summary: The customer was double charged for March and wants the duplicate refunded.
+  - email: |
+      I can't log in anymore. The password reset email never arrives.
+    category: account
+    summary: The customer cannot log in because the password reset email is not arriving.
