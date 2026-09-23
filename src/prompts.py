@@ -1,5 +1,6 @@
 """Load versioned prompt files from prompts/ into PromptConfig."""
 
+import hashlib
 from pathlib import Path
 
 import yaml
@@ -51,3 +52,8 @@ def load_prompt(version_or_path: str) -> PromptConfig:
         )
 
     return config
+
+
+def prompt_hash(config: PromptConfig) -> str:
+    """Hash of the full prompt config, so editing a prompt without bumping its version is still detected."""
+    return hashlib.sha256(config.model_dump_json().encode("utf-8")).hexdigest()[:16]

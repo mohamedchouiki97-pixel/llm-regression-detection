@@ -60,11 +60,10 @@ def test_valid_dataset_has_no_errors_or_warnings(tmp_path):
     assert report.warnings == []
 
 
-def test_repo_seed_file_passes_with_placeholder_warning():
+def test_repo_dataset_passes():
     dataset = load_dataset(ROOT / "data" / "golden.json")
     report = check_dataset(dataset)
-    assert report.ok
-    assert any("3 placeholder cases remain" in w for w in report.warnings)
+    assert report.ok, report.errors
 
 
 # Loading
@@ -270,10 +269,10 @@ def run_cli(*args: str) -> subprocess.CompletedProcess:
     )
 
 
-def test_cli_passes_on_seed_file():
+def test_cli_passes_on_repo_dataset():
     result = run_cli()
     assert result.returncode == 0, result.stderr
-    assert "OK: 0 errors, 2 warnings" in result.stdout
+    assert "OK: 0 errors" in result.stdout
 
 
 def test_cli_fails_on_duplicate_id(tmp_path):

@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from enum import Enum
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
@@ -103,3 +103,66 @@ class GoldenDataset(BaseModel):
     version: int = Field(ge=1)
     changelog: list[ChangelogEntry] = Field(min_length=1)
     cases: list[GoldenCase] = Field(min_length=1)
+
+
+# Eval runs
+
+
+class JudgeVerdict(BaseModel):
+    """The judge's structured output. Reasoning comes first so the model thinks before it scores."""
+
+    reasoning: str = Field(description="One or two sentences explaining the score.")
+    score: Literal[1, 2, 3, 4, 5]
+
+
+class JudgeOutput(BaseModel):
+    verdict: JudgeVerdict
+    model: str
+    input_tokens: int
+    output_tokens: int
+
+
+class CaseResult(BaseModel):
+    """One golden case scored in one run. Difficulty and tags are copied so old runs group correctly."""
+
+    case_id: str
+    expected_category: Category
+    predicted_category: Category | None = None
+    category_match: bool = False
+    summary: str | None = None
+    summary_score: int | None = None
+    judge_reasoning: str | None = None
+    passed: bool = False
+    error: str | None = None
+    difficulty: Difficulty
+    tags: list[str] = Field(default_factory=list)
+    latency_ms: float | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float | None = None
+    judge_cost_usd: float | None = None
+    # True when the classifier answer came from the cache, so its latency is from an earlier call.
+    cached: bool = False
+
+
+class RunRecord(BaseModel):
+    run_id: str
+    created_at: datetime
+    prompt_version: str
+    prompt_hash: str
+    model: str
+    judge_model: str
+    judge_version: str
+    dataset_version: int
+    summary_threshold: int
+    git_sha: str
+    git_branch: str
+    git_dirty: bool
+    n_cases: int
+    n_passed: int
+    pass_rate: float
+    n_errors: int
+    classifier_cost_usd: float | None
+    judge_cost_usd: float | None
+    n_cached: int
+    results: list[CaseResult]
