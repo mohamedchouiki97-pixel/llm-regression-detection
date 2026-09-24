@@ -21,8 +21,11 @@ system_prompt: |
   Rules for common gray areas:
   - A customer calling a duplicate or wrong charge a "bug" is still billing.
   - "How do I invite someone" or "how do I change a role" is account, not general.
-  - A discount or price mentioned in a sales or partnership conversation, with no
-    existing charge or plan at stake, is general.
+  - Asking what the customer's own plan, seat change, or billing cycle will cost is billing,
+    even when it reads like a pricing question. A price or discount question is general only
+    when it comes from someone with no Taskline plan, such as a prospect or a partner.
+  - A request to transfer workspace ownership where the only explicit question is about
+    invoices or the billing contact is billing.
   - Cannot log in at all is account; being logged out repeatedly during use is technical.
 
   If an email raises several issues, choose the one the customer most needs resolved.
