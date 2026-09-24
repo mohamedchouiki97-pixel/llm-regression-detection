@@ -11,12 +11,28 @@ from openai import AsyncOpenAI
 
 from src.cache import DEFAULT_CACHE_DIR, Cache
 from src.classifier import ClassificationError, classify_email
+from src.compare import (
+    DEFAULT_DRIFT_FLOOR,
+    DEFAULT_FAIL_DELTA,
+    DEFAULT_WARN_DELTA,
+    DRIFT_WINDOW,
+    compare_runs,
+)
 from src.golden import DEFAULT_DATASET_PATH, DatasetLoadError, check_dataset, coverage_table, load_dataset
-from src.models import ClassifyOutput, GoldenDataset, PromptConfig, RunRecord
+from src.models import (
+    CaseChange,
+    ClassifyOutput,
+    Comparison,
+    GoldenDataset,
+    GroupDelta,
+    PromptConfig,
+    RunRecord,
+    Status,
+)
 from src.prompts import PromptLoadError, load_prompt
 from src.runner import DEFAULT_CONCURRENCY, build_run_record, git_info, run_eval
 from src.scoring import DEFAULT_SUMMARY_THRESHOLD, JUDGE_MODEL, judge_summary
-from src.store import DEFAULT_DB_PATH, save_run
+from src.store import DEFAULT_DB_PATH, comparable_main_runs, latest_run_id, load_run, save_run
 
 
 async def run_classify(email_text: str, config: PromptConfig) -> ClassifyOutput:
@@ -159,6 +175,89 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def print_group_table(title: str, deltas: list[GroupDelta]) -> None:
+    print(f"{title:<12}{'baseline':>10}{'run':>10}{'delta':>10}")
+    for d in deltas:
+        print(f"{d.group:<12}{d.baseline_rate:>10.1%}{d.run_rate:>10.1%}{d.delta * 100:>+9.1f}pp")
+
+
+def print_case_changes(title: str, changes: list[CaseChange]) -> None:
+    print(f"{title} ({len(changes)})")
+    for change in changes:
+        before, after = change.before, change.after
+        print(
+            f"  {change.case_id} [{after.expected_category.value}, {after.difficulty.value}, {after.split.value}]  "
+            f"predicted {before.predicted_category.value if before.predicted_category else '-'}"
+            f" -> {after.predicted_category.value if after.predicted_category else '-'}, "
+            f"summary score {before.summary_score or '-'} -> {after.summary_score or '-'}"
+        )
+        if after.error:
+            print(f"    error: {after.error}")
+
+
+def print_comparison(comparison: Comparison) -> None:
+    print(f"{comparison.status.value.upper()}: run {comparison.run_id} vs baseline {comparison.baseline_id or '(none)'}")
+    for reason in comparison.reasons:
+        print(f"  - {reason}")
+    for note in comparison.notes:
+        print(f"  note: {note}")
+
+    if comparison.baseline_id is not None:
+        print()
+        print(f"{'metric':<20}{'baseline':>10}{'run':>10}{'delta':>10}")
+        for m in comparison.overall:
+            if m.name == "mean_summary_score":
+                print(f"{m.name:<20}{m.baseline:>10.2f}{m.run:>10.2f}{m.delta:>+10.2f}")
+            else:
+                print(f"{m.name:<20}{m.baseline:>10.1%}{m.run:>10.1%}{m.delta * 100:>+9.1f}pp")
+        for title, deltas in [
+            ("category", comparison.by_category),
+            ("difficulty", comparison.by_difficulty),
+            ("split", comparison.by_split),
+        ]:
+            print()
+            print_group_table(title, deltas)
+        print()
+        print(
+            f"changed predictions: {comparison.prediction_changes}, "
+            f"changed summary scores: {comparison.score_changes}"
+        )
+        print_case_changes("regressions", comparison.regressions)
+        print_case_changes("improvements", comparison.improvements)
+
+    drift = comparison.drift
+    print()
+    if drift.moving_average is None:
+        print(f"drift: not enough history ({len(drift.run_ids)}/{drift.window} runs)")
+    else:
+        print(f"drift: {drift.window} run average {drift.moving_average:.1%} (floor {drift.floor:.0%})")
+
+
+def cmd_compare(args: argparse.Namespace) -> int:
+    run_id = args.run or latest_run_id(args.db)
+    if run_id is None:
+        print("error: no runs stored yet; run `mrd run` first", file=sys.stderr)
+        return 2
+    try:
+        run = load_run(run_id, args.db)
+        history = comparable_main_runs(run, args.db, limit=DRIFT_WINDOW - 1)
+        baseline = load_run(args.baseline, args.db) if args.baseline else (history[0] if history else None)
+    except KeyError as exc:
+        print(f"error: {exc.args[0]}", file=sys.stderr)
+        return 2
+
+    comparison = compare_runs(
+        run,
+        baseline,
+        history,
+        warn_delta=args.warn_delta,
+        fail_delta=args.fail_delta,
+        drift_floor=args.drift_floor,
+    )
+    print_comparison(comparison)
+    return 1 if comparison.status is Status.FAIL else 0
+
+
 def main() -> None:
     load_dotenv()
 
@@ -196,6 +295,32 @@ def main() -> None:
     )
     run.add_argument("--no-cache", action="store_true", help="Always call the API; ignore cached responses")
     run.set_defaults(func=cmd_run)
+
+    compare = sub.add_parser("compare", help="Compare a run against a baseline and decide pass, warn, or fail")
+    compare.add_argument("--run", help="Run id to evaluate (default: the latest run)")
+    compare.add_argument(
+        "--baseline", help="Run id to compare against (default: latest comparable clean run on main)"
+    )
+    compare.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Path to the SQLite run history")
+    compare.add_argument(
+        "--warn-delta",
+        type=float,
+        default=DEFAULT_WARN_DELTA,
+        help=f"Warn when overall pass rate drops by this much (default {DEFAULT_WARN_DELTA})",
+    )
+    compare.add_argument(
+        "--fail-delta",
+        type=float,
+        default=DEFAULT_FAIL_DELTA,
+        help=f"Fail when overall pass rate drops by this much (default {DEFAULT_FAIL_DELTA})",
+    )
+    compare.add_argument(
+        "--drift-floor",
+        type=float,
+        default=DEFAULT_DRIFT_FLOOR,
+        help=f"Warn when the {DRIFT_WINDOW} run average pass rate is below this (default {DEFAULT_DRIFT_FLOOR})",
+    )
+    compare.set_defaults(func=cmd_compare)
 
     args = parser.parse_args()
     sys.exit(args.func(args))

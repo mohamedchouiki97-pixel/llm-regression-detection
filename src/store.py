@@ -103,3 +103,36 @@ def load_run(run_id: str, path: Path | str = DEFAULT_DB_PATH) -> RunRecord:
         data["tags"] = json.loads(data["tags"])
         results.append(CaseResult.model_validate(data))
     return RunRecord.model_validate({**dict(run_row), "results": results})
+
+
+def latest_run_id(path: Path | str = DEFAULT_DB_PATH) -> str | None:
+    with closing(connect(path)) as conn:
+        row = conn.execute("SELECT run_id FROM runs ORDER BY created_at DESC LIMIT 1").fetchone()
+    return row["run_id"] if row else None
+
+
+def comparable_main_runs(run: RunRecord, path: Path | str = DEFAULT_DB_PATH, limit: int | None = None) -> list[RunRecord]:
+    """Clean runs on main made before this run, with the same dataset, judge, and threshold. Newest first.
+
+    These are the only runs that make a fair baseline or belong in the drift window.
+    """
+    query = """
+        SELECT run_id FROM runs
+        WHERE git_branch = 'main' AND git_dirty = 0
+          AND dataset_version = ? AND judge_version = ? AND summary_threshold = ?
+          AND created_at < ? AND run_id != ?
+        ORDER BY created_at DESC
+    """
+    params: list = [
+        run.dataset_version,
+        run.judge_version,
+        run.summary_threshold,
+        run.model_dump(mode="json")["created_at"],
+        run.run_id,
+    ]
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+    with closing(connect(path)) as conn:
+        run_ids = [row["run_id"] for row in conn.execute(query, params)]
+    return [load_run(run_id, path) for run_id in run_ids]

@@ -175,3 +175,67 @@ class RunRecord(BaseModel):
     judge_cost_usd: float | None
     n_cached: int
     results: list[CaseResult]
+
+
+# Comparison
+
+
+class Status(str, Enum):
+    PASS = "pass"
+    WARN = "warn"
+    FAIL = "fail"
+
+
+class MetricDelta(BaseModel):
+    name: str
+    baseline: float
+    run: float
+    delta: float
+
+
+class GroupDelta(BaseModel):
+    """Pass rate of one group (a category, difficulty, or split) in both runs."""
+
+    group: str
+    baseline_n: int
+    baseline_rate: float
+    run_n: int
+    run_rate: float
+    delta: float
+
+
+class CaseChange(BaseModel):
+    """A case whose pass/fail outcome flipped between the baseline and the run."""
+
+    case_id: str
+    before: CaseResult
+    after: CaseResult
+
+
+class DriftResult(BaseModel):
+    window: int
+    floor: float
+    run_ids: list[str]
+    moving_average: float | None
+    below_floor: bool
+
+
+class Comparison(BaseModel):
+    run_id: str
+    baseline_id: str | None
+    status: Status
+    reasons: list[str]
+    notes: list[str]
+    warn_delta: float
+    fail_delta: float
+    overall: list[MetricDelta]
+    by_category: list[GroupDelta]
+    by_difficulty: list[GroupDelta]
+    by_split: list[GroupDelta]
+    regressions: list[CaseChange]
+    improvements: list[CaseChange]
+    unmatched_case_ids: list[str]
+    prediction_changes: int
+    score_changes: int
+    mcnemar_p: float | None
+    drift: DriftResult
