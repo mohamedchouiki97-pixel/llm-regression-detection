@@ -32,6 +32,8 @@ jobs:
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       MRD_DB: ${{ github.workspace }}/runs.db
       MRD_REPORT_DIR: ${{ github.workspace }}/reports
+      # Two evals can run close together; lower concurrency keeps them under the API rate limit.
+      MRD_CONCURRENCY: "4"
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
 
     steps:

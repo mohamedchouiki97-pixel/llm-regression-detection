@@ -1,7 +1,7 @@
 import pytest
 
 from src.cli import env_setting
-from src.prompts import PromptLoadError, active_prompt_version
+from src.prompts import PromptLoadError, active_prompt_version, load_prompt
 
 
 def test_env_setting_default_when_unset(monkeypatch):
@@ -27,8 +27,9 @@ def test_env_setting_bad_value_names_the_variable(monkeypatch):
         env_setting("MRD_CONCURRENCY", 8, int)
 
 
-def test_repo_active_prompt_is_v1():
-    assert active_prompt_version() == "v1"
+def test_repo_active_prompt_loads():
+    # Shipping a new prompt changes ACTIVE, so check that it points at a valid prompt, not at a fixed version.
+    assert load_prompt(active_prompt_version()).version == active_prompt_version()
 
 
 def test_active_prompt_strips_whitespace(tmp_path):

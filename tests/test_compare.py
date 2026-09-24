@@ -269,13 +269,72 @@ def test_no_baseline_passes_with_note():
     assert "no baseline to compare against" in comparison.notes
 
 
-def test_errors_warn():
+def run_with_errors(run_id: str, failing: set[int], errored: set[int], minutes: int = 0) -> RunRecord:
+    results = [
+        result(i, i not in failing and i not in errored, error="judge: RateLimitError" if i in errored else None)
+        for i in range(1, 101)
+    ]
+    return make_run(run_id, results, minutes)
+
+
+def test_few_errors_warn_and_are_left_out():
     baseline = run_with_failures("base", BASE_FAILS)
-    results = [result(i, i not in BASE_FAILS) for i in range(1, 100)] + [result(100, False, error="classify: boom")]
-    run = make_run("new", results, minutes=1)
+    run = run_with_errors("new", BASE_FAILS, errored={100}, minutes=1)
     comparison = compare_runs(run, baseline, [])
     assert comparison.status is Status.WARN
-    assert "1 cases errored and were counted as fails" in comparison.reasons
+    assert "1 cases errored in the run and are left out of the comparison" in comparison.reasons
+    # The errored case is not a regression, and the pass rate is compared on the 99 scored cases.
+    assert comparison.regressions == []
+    assert comparison.overall[0].delta == 0
+    assert "compared 99 cases scored in both runs" in comparison.notes
+
+
+def test_errors_cannot_fake_a_regression():
+    # 9 errors used to count as 9 fails: a -9 pp "significant" regression from a rate limit alone.
+    baseline = run_with_failures("base", BASE_FAILS)
+    run = run_with_errors("new", BASE_FAILS, errored=set(range(50, 59)), minutes=1)
+    comparison = compare_runs(run, baseline, [])
+    assert comparison.regressions == []
+    assert comparison.mcnemar_p == 1.0
+    assert not any("pass rate dropped" in r for r in comparison.reasons)
+
+
+def test_too_many_errors_fail_as_incomplete():
+    baseline = run_with_failures("base", BASE_FAILS)
+    run = run_with_errors("new", BASE_FAILS, errored=set(range(50, 59)), minutes=1)
+    comparison = compare_runs(run, baseline, [])
+    assert comparison.status is Status.FAIL
+    assert comparison.reasons[0].startswith("eval incomplete: 9/100 cases errored in the run (limit 5%)")
+
+
+def test_error_limit_boundary_and_config():
+    baseline = run_with_failures("base", BASE_FAILS)
+    at_limit = run_with_errors("new", BASE_FAILS, errored=set(range(50, 55)), minutes=1)
+    assert compare_runs(at_limit, baseline, []).status is Status.WARN  # 5% is allowed
+    over = run_with_errors("new", BASE_FAILS, errored=set(range(50, 56)), minutes=1)
+    assert compare_runs(over, baseline, []).status is Status.FAIL
+    assert compare_runs(over, baseline, [], max_error_rate=0.10).status is Status.WARN
+
+
+def test_baseline_errors_are_checked_too():
+    baseline = run_with_errors("base", BASE_FAILS, errored=set(range(50, 60)))
+    run = run_with_failures("new", BASE_FAILS, minutes=1)
+    comparison = compare_runs(run, baseline, [])
+    assert comparison.status is Status.FAIL
+    assert "errored in the baseline" in comparison.reasons[0]
+    assert comparison.improvements == []  # errored baseline cases are not improvements either
+
+
+def test_real_regressions_still_counted_alongside_errors():
+    baseline = run_with_failures("base", BASE_FAILS)
+    run = make_run(
+        "new",
+        [result(i, i not in BASE_FAILS and i not in range(60, 63), error="judge: x" if i == 100 else None)
+         for i in range(1, 101)],
+        minutes=1,
+    )
+    comparison = compare_runs(run, baseline, [])
+    assert [c.case_id for c in comparison.regressions] == ["gc-060", "gc-061", "gc-062"]
 
 
 # Drift
