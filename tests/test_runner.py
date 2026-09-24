@@ -61,6 +61,39 @@ def test_retry_then_success():
     assert len(sleep.delays) == 2
 
 
+def test_default_retries_outlast_a_rate_limit_window():
+    call, state = flaky([rate_limit_error() for _ in range(20)])
+    sleep = FakeSleep()
+    with pytest.raises(openai.RateLimitError):
+        asyncio.run(with_retries(call, sleep=sleep))
+    assert state["calls"] == 7  # first try plus 6 retries
+    # 1 + 2 + 4 + 8 + 16 + 32 = 63s nominal; jitter can shorten each wait to 75%.
+    assert sum(sleep.delays) >= 0.75 * 63
+
+
+def test_retry_after_header_is_honored():
+    response = httpx2.Response(429, request=REQUEST, headers={"retry-after-ms": "7000"})
+    call, _ = flaky([openai.RateLimitError("slow down", response=response, body=None)])
+    sleep = FakeSleep()
+    asyncio.run(with_retries(call, base_delay=1.0, sleep=sleep))
+    assert sleep.delays == [7.0]
+
+
+def test_retry_after_seconds_header_and_cap():
+    response = httpx2.Response(429, request=REQUEST, headers={"retry-after": "300"})
+    call, _ = flaky([openai.RateLimitError("slow down", response=response, body=None)])
+    sleep = FakeSleep()
+    asyncio.run(with_retries(call, sleep=sleep))
+    assert sleep.delays == [60.0]
+
+
+def test_backoff_is_capped():
+    call, _ = flaky([rate_limit_error() for _ in range(8)])
+    sleep = FakeSleep()
+    asyncio.run(with_retries(call, max_retries=8, base_delay=1.0, sleep=sleep))
+    assert max(sleep.delays) == 60.0
+
+
 def test_gives_up_after_max_retries():
     call, state = flaky([rate_limit_error() for _ in range(10)])
     sleep = FakeSleep()
