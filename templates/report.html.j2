@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eval report {{ run.run_id }}</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --good: #0ca30c;
+  --good-text: #006300;
+  --warning: #fab219;
+  --critical: #d03b3b;
+  --bad-text: #b42f2f;
+  --wash: rgba(11, 11, 11, 0.03);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --good-text: #0ca30c;
+    --bad-text: #e66767;
+    --wash: rgba(255, 255, 255, 0.04);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --ink: #ffffff;
+  --ink-2: #c3c2b7;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --good-text: #0ca30c;
+  --bad-text: #e66767;
+  --wash: rgba(255, 255, 255, 0.04);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+h2 { font-size: 16px; margin: 32px 0 12px; }
+h3 { font-size: 14px; margin: 0; }
+.sub { color: var(--ink-2); margin: 0; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+.verdict { display: flex; gap: 12px; align-items: flex-start; border-left: 6px solid var(--muted); margin-top: 16px; }
+.verdict.pass { border-left-color: var(--good); }
+.verdict.warn { border-left-color: var(--warning); }
+.verdict.fail { border-left-color: var(--critical); }
+.verdict .icon { font-size: 22px; line-height: 1; }
+.verdict.pass .icon { color: var(--good); }
+.verdict.warn .icon { color: var(--warning); }
+.verdict.fail .icon { color: var(--critical); }
+.verdict .label { font-size: 22px; font-weight: 700; letter-spacing: 0.02em; }
+.verdict ul { margin: 6px 0 0; padding-left: 18px; }
+.verdict .note { color: var(--ink-2); }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
+td.num, th.num { text-align: right; }
+.down { color: var(--bad-text); font-weight: 600; }
+.up { color: var(--good-text); font-weight: 600; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.scroll { overflow-x: auto; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; color: var(--ink-2); font-size: 13px; margin-bottom: 8px; }
+.legend .key { display: inline-block; width: 16px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+.legend .key.s1 { border-color: var(--series-1); }
+.legend .key.s2 { border-color: var(--series-2); }
+.legend .key.floor { border-color: var(--axis); }
+svg.trend { width: 100%; height: auto; display: block; }
+svg.trend .grid { stroke: var(--grid); stroke-width: 1; }
+svg.trend .floor { stroke: var(--axis); stroke-width: 1.5; }
+svg.trend .tick, svg.trend .floor-label { fill: var(--muted); font-size: 11px; }
+svg.trend .end-label { fill: var(--ink); font-size: 12px; font-weight: 600; }
+svg.trend .series-1 { fill: none; stroke: var(--series-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+svg.trend .series-2 { fill: none; stroke: var(--series-2); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+svg.trend .marker { fill: var(--series-1); stroke: var(--surface); stroke-width: 2; }
+svg.trend .marker.current { stroke: var(--ink); }
+svg.trend .hit { fill: transparent; cursor: default; }
+svg.trend .hit:hover, svg.trend .hit:focus { fill: var(--wash); stroke: var(--axis); outline: none; }
+.case { margin-bottom: 16px; }
+.case-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; margin-bottom: 8px; }
+.pill { font-size: 12px; color: var(--ink-2); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
+.email { white-space: pre-wrap; background: var(--wash); border-radius: 6px; padding: 10px 12px; margin: 0 0 8px; }
+.field { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 8px 0 2px; }
+.side h4 { margin: 0 0 4px; font-size: 13px; color: var(--ink-2); }
+.wrong { color: var(--bad-text); font-weight: 600; }
+.reasoning { color: var(--ink-2); font-style: italic; }
+details > summary { cursor: pointer; font-weight: 600; margin: 24px 0 12px; }
+.empty { color: var(--ink-2); }
+@media (max-width: 640px) {
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<main>
+{% set c = comparison %}
+{% set icons = {"pass": "✓", "warn": "!", "fail": "✕"} %}
+
+<h1>Eval report: prompt {{ run.prompt_version }}{% if baseline %} vs {{ baseline.prompt_version }}{% endif %}</h1>
+<p class="sub">Run {{ run.run_id }} · dataset v{{ run.dataset_version }} · {{ run.created_at.strftime("%Y-%m-%d %H:%M UTC") }}</p>
+
+<section class="card verdict {{ c.status.value }}" aria-label="Verdict">
+  <span class="icon" aria-hidden="true">{{ icons[c.status.value] }}</span>
+  <div>
+    <div class="label">{{ c.status.value | upper }}</div>
+    {% if c.reasons or c.notes %}
+    <ul>
+      {% for reason in c.reasons %}<li>{{ reason }}</li>{% endfor %}
+      {% for note in c.notes %}<li class="note">{{ note }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+</section>
+
+<h2>Run vs baseline</h2>
+<div class="card scroll">
+  <table>
+    <thead><tr><th></th><th>This run</th><th>Baseline</th></tr></thead>
+    <tbody>
+      {% set b = baseline %}
+      <tr><th>Run id</th><td>{{ run.run_id }}</td><td>{{ b.run_id if b else "none" }}</td></tr>
+      <tr><th>Prompt</th><td>{{ run.prompt_version }} ({{ run.prompt_hash }})</td><td>{{ (b.prompt_version ~ " (" ~ b.prompt_hash ~ ")") if b else "" }}</td></tr>
+      <tr><th>Model</th><td>{{ run.model }}</td><td>{{ b.model if b else "" }}</td></tr>
+      <tr><th>Judge</th><td>{{ run.judge_model }} {{ run.judge_version }}</td><td>{{ (b.judge_model ~ " " ~ b.judge_version) if b else "" }}</td></tr>
+      <tr><th>Dataset</th><td>v{{ run.dataset_version }}</td><td>{{ ("v" ~ b.dataset_version) if b else "" }}</td></tr>
+      <tr><th>Git</th><td>{{ run.git_sha[:7] }} on {{ run.git_branch }}{% if run.git_dirty %} (uncommitted changes){% endif %}</td>
+          <td>{% if b %}{{ b.git_sha[:7] }} on {{ b.git_branch }}{% if b.git_dirty %} (uncommitted changes){% endif %}{% endif %}</td></tr>
+      <tr><th>Time</th><td>{{ run.created_at.strftime("%Y-%m-%d %H:%M UTC") }}</td><td>{{ b.created_at.strftime("%Y-%m-%d %H:%M UTC") if b else "" }}</td></tr>
+      <tr><th>Est. cost</th>
+          <td>{% if run.classifier_cost_usd is not none and run.judge_cost_usd is not none %}${{ "%.3f" | format(run.classifier_cost_usd + run.judge_cost_usd) }}{% else %}unknown{% endif %}</td>
+          <td>{% if b and b.classifier_cost_usd is not none and b.judge_cost_usd is not none %}${{ "%.3f" | format(b.classifier_cost_usd + b.judge_cost_usd) }}{% endif %}</td></tr>
+      <tr><th>Cached</th><td>{{ run.n_cached }}/{{ run.n_cases }}</td><td>{{ (b.n_cached ~ "/" ~ b.n_cases) if b else "" }}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+{% macro delta_cell(delta, points=True) %}
+{% if points %}{% set text = delta | pp %}{% else %}{% set text = "%+.2f" | format(delta) %}{% endif %}
+<td class="num {{ 'down' if delta < -1e-9 else ('up' if delta > 1e-9 else '') }}">{{ text }}</td>
+{% endmacro %}
+
+{% if baseline %}
+<h2>Scorecard</h2>
+<div class="card scroll">
+  <table>
+    <thead><tr><th>Metric</th><th class="num">Baseline</th><th class="num">This run</th><th class="num">Change</th></tr></thead>
+    <tbody>
+    {% for m in c.overall %}
+      {% if m.name == "mean_summary_score" %}
+      <tr><td>Mean summary score</td><td class="num">{{ "%.2f" | format(m.baseline) }}</td><td class="num">{{ "%.2f" | format(m.run) }}</td>{{ delta_cell(m.delta, False) }}</tr>
+      {% else %}
+      <tr><td>{{ "Pass rate" if m.name == "pass_rate" else "Category accuracy" }}</td><td class="num">{{ m.baseline | pct }}</td><td class="num">{{ m.run | pct }}</td>{{ delta_cell(m.delta) }}</tr>
+      {% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="sub">{{ c.regressions | length }} regressions, {{ c.improvements | length }} improvements{% if c.mcnemar_p is not none %}, McNemar p = {{ "%.3g" | format(c.mcnemar_p) }}{% endif %}. Changed predictions: {{ c.prediction_changes }}. Changed summary scores: {{ c.score_changes }}.</p>
+</div>
+
+<div class="grid-3" style="margin-top: 16px;">
+{% for title, deltas in [("Pass rate by category", c.by_category), ("By difficulty", c.by_difficulty), ("By split", c.by_split)] %}
+  <div class="card scroll">
+    <h3>{{ title }}</h3>
+    <table>
+      <thead><tr><th></th><th class="num">Base</th><th class="num">Run</th><th class="num">Change</th></tr></thead>
+      <tbody>
+      {% for d in deltas %}
+        <tr><td>{{ d.group }} <span class="sub">({{ d.run_n }})</span></td><td class="num">{{ d.baseline_rate | pct }}</td><td class="num">{{ d.run_rate | pct }}</td>{{ delta_cell(d.delta) }}</tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endfor %}
+</div>
+{% endif %}
+
+<h2>Pass rate trend</h2>
+<div class="card">
+  <div class="legend">
+    <span><span class="key s1"></span>Pass rate per run</span>
+    <span><span class="key s2"></span>{{ c.drift.window }} run average</span>
+    <span><span class="key floor"></span>Drift floor {{ c.drift.floor | pct }}</span>
+  </div>
+  {{ trend_svg }}
+  <p class="sub">
+    {% if c.drift.moving_average is none %}Not enough history for the {{ c.drift.window }} run average yet ({{ c.drift.run_ids | length }}/{{ c.drift.window }} runs).
+    {% else %}{{ c.drift.window }} run average: {{ c.drift.moving_average | pct }}.{% endif %}
+    Earlier points are clean runs on main with the same dataset and judge; the last point is this run.
+  </p>
+  <details>
+    <summary>Trend data</summary>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Run</th><th>Prompt</th><th class="num">Pass rate</th><th class="num">{{ c.drift.window }} run average</th></tr></thead>
+        <tbody>
+        {% for p in trend %}
+          <tr><td>{{ p.run_id }}{% if p.current %} (this run){% endif %}</td><td>{{ p.prompt_version }}</td><td class="num">{{ p.pass_rate | pct }}</td><td class="num">{{ (p.moving_average | pct) if p.moving_average is not none else "" }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+</div>
+
+{% macro side(title, r, expected) %}
+<div class="side">
+  <h4>{{ title }}</h4>
+  {% if r is none %}
+    <p class="empty">No result.</p>
+  {% else %}
+    <div class="field">Predicted category</div>
+    <div class="{{ '' if r.category_match else 'wrong' }}">{{ r.predicted_category.value if r.predicted_category else "none" }}{% if not r.category_match and r.predicted_category %} (expected {{ expected }}){% endif %}</div>
+    <div class="field">Summary</div>
+    <div>{{ r.summary if r.summary else "none" }}</div>
+    <div class="field">Judge score</div>
+    <div class="{{ 'wrong' if r.summary_score is not none and r.summary_score < run.summary_threshold else '' }}">{{ r.summary_score if r.summary_score is not none else "none" }}{% if r.summary_score is not none %} / 5{% endif %}</div>
+    {% if r.judge_reasoning %}<div class="reasoning">{{ r.judge_reasoning }}</div>{% endif %}
+    {% if r.error %}<div class="field">Error</div><div class="wrong">{{ r.error }}</div>{% endif %}
+    <div class="field">Outcome</div>
+    <div class="{{ 'up' if r.passed else 'down' }}">{{ "pass" if r.passed else "fail" }}</div>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% macro case_card(v, show_before=True) %}
+<article class="card case" id="{{ v.case_id }}">
+  <div class="case-head">
+    <h3>{{ v.case_id }}</h3>
+    <span class="pill">expected {{ v.after.expected_category.value }}</span>
+    <span class="pill">{{ v.after.difficulty.value }}</span>
+    <span class="pill">{{ v.after.split.value }}</span>
+    {% for tag in v.after.tags %}<span class="pill">{{ tag }}</span>{% endfor %}
+  </div>
+  {% if v.golden %}
+    <div class="field">Email</div>
+    <p class="email">{{ v.golden.email }}</p>
+    <div class="field">Ideal summary</div>
+    <div>{{ v.golden.ideal_summary }}</div>
+  {% else %}
+    <p class="empty">Email text unavailable (the dataset file no longer matches this run's dataset version).</p>
+  {% endif %}
+  <div class="{{ 'grid-2' if show_before else '' }}" style="margin-top: 12px;">
+    {% if show_before %}{{ side("Baseline", v.before, v.after.expected_category.value) }}{% endif %}
+    {{ side("This run", v.after, v.after.expected_category.value) }}
+  </div>
+</article>
+{% endmacro %}
+
+{% if baseline %}
+<h2>Regressed cases ({{ regressions | length }})</h2>
+{% for v in regressions %}{{ case_card(v) }}{% else %}<p class="empty">No case went from pass to fail.</p>{% endfor %}
+
+<details>
+  <summary>Improved cases ({{ improvements | length }})</summary>
+  {% for v in improvements %}{{ case_card(v) }}{% else %}<p class="empty">No case went from fail to pass.</p>{% endfor %}
+</details>
+{% endif %}
+
+<details {% if not baseline %}open{% endif %}>
+  <summary>All failing cases in this run ({{ failures | length }})</summary>
+  {% for v in failures %}{{ case_card(v, show_before=False) }}{% else %}<p class="empty">Every case passed.</p>{% endfor %}
+</details>
+
+</main>
+</body>
+</html>

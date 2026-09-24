@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import openai
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
+from src.alerts import build_slack_message, notify
 from src.cache import DEFAULT_CACHE_DIR, Cache
 from src.classifier import ClassificationError, classify_email
 from src.compare import (
@@ -30,6 +32,7 @@ from src.models import (
     Status,
 )
 from src.prompts import PromptLoadError, load_prompt
+from src.report import DEFAULT_REPORT_DIR, TREND_RUNS, build_report_context, write_report
 from src.runner import DEFAULT_CONCURRENCY, build_run_record, git_info, run_eval
 from src.scoring import DEFAULT_SUMMARY_THRESHOLD, JUDGE_MODEL, judge_summary
 from src.store import DEFAULT_DB_PATH, comparable_main_runs, latest_run_id, load_run, save_run
@@ -240,7 +243,8 @@ def cmd_compare(args: argparse.Namespace) -> int:
         return 2
     try:
         run = load_run(run_id, args.db)
-        history = comparable_main_runs(run, args.db, limit=DRIFT_WINDOW - 1)
+        # Enough history for the trend chart; drift and the baseline only use the newest runs.
+        history = comparable_main_runs(run, args.db, limit=TREND_RUNS + DRIFT_WINDOW - 2)
         baseline = load_run(args.baseline, args.db) if args.baseline else (history[0] if history else None)
     except KeyError as exc:
         print(f"error: {exc.args[0]}", file=sys.stderr)
@@ -255,11 +259,34 @@ def cmd_compare(args: argparse.Namespace) -> int:
         drift_floor=args.drift_floor,
     )
     print_comparison(comparison)
+
+    try:
+        dataset = load_dataset(args.dataset)
+    except DatasetLoadError:
+        dataset = None
+    report_path = write_report(build_report_context(run, baseline, comparison, history, dataset), args.report_dir)
+    print()
+    print(f"report: {report_path}")
+
+    if args.notify:
+        # In CI, REPORT_URL points at the uploaded report; locally the file path is the best we have.
+        report_url = os.environ.get("REPORT_URL") or str(report_path)
+        payload = build_slack_message(comparison, run, baseline, report_url)
+        print()
+        print("Slack message:")
+        for line in payload["text"].splitlines():
+            print(f"  {line}")
+        print(notify(payload))
+
     return 1 if comparison.status is Status.FAIL else 0
 
 
 def main() -> None:
     load_dotenv()
+    # Windows consoles default to cp1252, which cannot print emoji or arrows. Replace them instead of
+    # crashing, since a crash would exit 1 and look exactly like a failed regression check.
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(errors="replace")
 
     parser = argparse.ArgumentParser(prog="mrd", description="Model regression detection system")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -320,6 +347,9 @@ def main() -> None:
         default=DEFAULT_DRIFT_FLOOR,
         help=f"Warn when the {DRIFT_WINDOW} run average pass rate is below this (default {DEFAULT_DRIFT_FLOOR})",
     )
+    compare.add_argument("--dataset", default=str(DEFAULT_DATASET_PATH), help="Dataset JSON, for email text in the report")
+    compare.add_argument("--report-dir", default=str(DEFAULT_REPORT_DIR), help="Where to write the HTML report")
+    compare.add_argument("--notify", action="store_true", help="Send the result to Slack if SLACK_WEBHOOK_URL is set")
     compare.set_defaults(func=cmd_compare)
 
     args = parser.parse_args()

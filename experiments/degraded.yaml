@@ -1,0 +1,10 @@
+# A deliberately worse prompt, used to prove the regression gate catches a bad change.
+# It drops the category definitions and few-shot examples, and forces terse summaries.
+# Kept outside prompts/ so it is never picked up as a real prompt version.
+version: degraded
+created_at: 2026-09-24T00:00:00Z
+model: gpt-4o-mini
+system_prompt: |
+  Sort this support email into billing, technical, account, or general.
+  Summarize it in five words or fewer.
+few_shot_examples: []
