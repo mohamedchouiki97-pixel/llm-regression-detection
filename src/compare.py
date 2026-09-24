@@ -223,12 +223,12 @@ def compare_runs(
     drop = -overall[0].delta
     if drop >= fail_delta - _EPSILON:
         raise_to(Status.FAIL)
-        reasons.append(f"pass rate dropped {drop:.1%} (fail at {fail_delta:.0%}); {flips}")
+        reasons.append(f"pass rate dropped {drop * 100:.1f} pp (fail at {fail_delta * 100:.0f} pp); {flips}")
     elif drop >= warn_delta - _EPSILON:
         raise_to(Status.WARN)
-        reasons.append(f"pass rate dropped {drop:.1%} (warn at {warn_delta:.0%}); {flips}")
+        reasons.append(f"pass rate dropped {drop * 100:.1f} pp (warn at {warn_delta * 100:.0f} pp); {flips}")
     else:
-        notes.append(f"pass rate change {overall[0].delta:+.1%}; {flips}")
+        notes.append(f"pass rate change {overall[0].delta * 100:+.1f} pp; {flips}")
 
     return Comparison(
         run_id=run.run_id,
