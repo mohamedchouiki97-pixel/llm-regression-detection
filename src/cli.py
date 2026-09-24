@@ -31,11 +31,27 @@ from src.models import (
     RunRecord,
     Status,
 )
-from src.prompts import PromptLoadError, load_prompt
-from src.report import DEFAULT_REPORT_DIR, TREND_RUNS, build_report_context, write_report
+from src.prompts import PromptLoadError, active_prompt_version, load_prompt
+from src.report import DEFAULT_REPORT_DIR, TREND_RUNS, build_report_context, render_markdown, write_report
 from src.runner import DEFAULT_CONCURRENCY, build_run_record, git_info, run_eval
 from src.scoring import DEFAULT_SUMMARY_THRESHOLD, JUDGE_MODEL, judge_summary
 from src.store import DEFAULT_DB_PATH, comparable_main_runs, latest_run_id, load_run, save_run
+
+
+def env_setting(name: str, default, cast=str):
+    """A setting from the environment, for Docker and CI. Command line flags still override it."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return cast(raw)
+    except ValueError:
+        raise SystemExit(f"error: environment variable {name}={raw!r} is not a valid {cast.__name__}")
+
+
+def resolve_prompt(prompt: str | None) -> PromptConfig:
+    """An explicit version or path, or else the active production prompt named in prompts/ACTIVE."""
+    return load_prompt(prompt or active_prompt_version())
 
 
 async def run_classify(email_text: str, config: PromptConfig) -> ClassifyOutput:
@@ -45,7 +61,7 @@ async def run_classify(email_text: str, config: PromptConfig) -> ClassifyOutput:
 
 def cmd_classify(args: argparse.Namespace) -> int:
     try:
-        config = load_prompt(args.prompt)
+        config = resolve_prompt(args.prompt)
     except PromptLoadError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -149,7 +165,7 @@ def print_run_summary(run: RunRecord) -> None:
 
 def cmd_run(args: argparse.Namespace) -> int:
     try:
-        config = load_prompt(args.prompt)
+        config = resolve_prompt(args.prompt)
     except PromptLoadError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -175,6 +191,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     save_run(run, args.db)
     print_run_summary(run)
+    if args.run_id_file:
+        Path(args.run_id_file).write_text(run.run_id, encoding="utf-8")
     return 0
 
 
@@ -268,9 +286,13 @@ def cmd_compare(args: argparse.Namespace) -> int:
     print()
     print(f"report: {report_path}")
 
+    # In CI, REPORT_URL points at the uploaded report; locally the file path is the best we have.
+    report_url = os.environ.get("REPORT_URL") or str(report_path)
+    if args.markdown:
+        Path(args.markdown).write_text(render_markdown(comparison, run, baseline, report_url), encoding="utf-8")
+        print(f"markdown: {args.markdown}")
+
     if args.notify:
-        # In CI, REPORT_URL points at the uploaded report; locally the file path is the best we have.
-        report_url = os.environ.get("REPORT_URL") or str(report_path)
         payload = build_slack_message(comparison, run, baseline, report_url)
         print()
         print("Slack message:")
@@ -288,11 +310,13 @@ def main() -> None:
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(errors="replace")
 
+    db_path = env_setting("MRD_DB", str(DEFAULT_DB_PATH))
+
     parser = argparse.ArgumentParser(prog="mrd", description="Model regression detection system")
     sub = parser.add_subparsers(dest="command", required=True)
 
     classify = sub.add_parser("classify", help="Classify one email with a prompt version")
-    classify.add_argument("--prompt", default="v1", help="Prompt version (e.g. v1) or path to a YAML file")
+    classify.add_argument("--prompt", help="Prompt version (e.g. v1) or YAML path (default: prompts/ACTIVE)")
     source = classify.add_mutually_exclusive_group(required=True)
     source.add_argument("--email", help="Email text")
     source.add_argument("--email-file", help="Path to a file containing the email text")
@@ -309,18 +333,24 @@ def main() -> None:
     validate.set_defaults(func=cmd_validate_dataset)
 
     run = sub.add_parser("run", help="Run the full golden dataset and store the run")
-    run.add_argument("--prompt", default="v1", help="Prompt version (e.g. v1) or path to a YAML file")
+    run.add_argument("--prompt", help="Prompt version (e.g. v1) or YAML path (default: prompts/ACTIVE)")
     run.add_argument("--dataset", default=str(DEFAULT_DATASET_PATH), help="Path to the dataset JSON")
-    run.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Path to the SQLite run history")
-    run.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY, help="Cases in flight at once")
+    run.add_argument("--db", default=db_path, help="Path to the SQLite run history (env MRD_DB)")
+    run.add_argument(
+        "--concurrency",
+        type=int,
+        default=env_setting("MRD_CONCURRENCY", DEFAULT_CONCURRENCY, int),
+        help="Cases in flight at once (env MRD_CONCURRENCY)",
+    )
     run.add_argument(
         "--summary-threshold",
         type=int,
         choices=range(1, 6),
-        default=DEFAULT_SUMMARY_THRESHOLD,
-        help=f"Minimum judge score for a case to pass (default {DEFAULT_SUMMARY_THRESHOLD})",
+        default=env_setting("MRD_SUMMARY_THRESHOLD", DEFAULT_SUMMARY_THRESHOLD, int),
+        help=f"Minimum judge score for a case to pass (default {DEFAULT_SUMMARY_THRESHOLD}, env MRD_SUMMARY_THRESHOLD)",
     )
     run.add_argument("--no-cache", action="store_true", help="Always call the API; ignore cached responses")
+    run.add_argument("--run-id-file", help="Write the new run id to this file, for scripts and CI")
     run.set_defaults(func=cmd_run)
 
     compare = sub.add_parser("compare", help="Compare a run against a baseline and decide pass, warn, or fail")
@@ -328,27 +358,33 @@ def main() -> None:
     compare.add_argument(
         "--baseline", help="Run id to compare against (default: latest comparable clean run on main)"
     )
-    compare.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Path to the SQLite run history")
+    compare.add_argument("--db", default=db_path, help="Path to the SQLite run history (env MRD_DB)")
     compare.add_argument(
         "--warn-delta",
         type=float,
-        default=DEFAULT_WARN_DELTA,
-        help=f"Warn when overall pass rate drops by this much (default {DEFAULT_WARN_DELTA})",
+        default=env_setting("MRD_WARN_DELTA", DEFAULT_WARN_DELTA, float),
+        help=f"Warn when overall pass rate drops by this much (default {DEFAULT_WARN_DELTA}, env MRD_WARN_DELTA)",
     )
     compare.add_argument(
         "--fail-delta",
         type=float,
-        default=DEFAULT_FAIL_DELTA,
-        help=f"Fail when overall pass rate drops by this much (default {DEFAULT_FAIL_DELTA})",
+        default=env_setting("MRD_FAIL_DELTA", DEFAULT_FAIL_DELTA, float),
+        help=f"Fail when overall pass rate drops by this much (default {DEFAULT_FAIL_DELTA}, env MRD_FAIL_DELTA)",
     )
     compare.add_argument(
         "--drift-floor",
         type=float,
-        default=DEFAULT_DRIFT_FLOOR,
-        help=f"Warn when the {DRIFT_WINDOW} run average pass rate is below this (default {DEFAULT_DRIFT_FLOOR})",
+        default=env_setting("MRD_DRIFT_FLOOR", DEFAULT_DRIFT_FLOOR, float),
+        help=f"Warn when the {DRIFT_WINDOW} run average pass rate is below this "
+        f"(default {DEFAULT_DRIFT_FLOOR}, env MRD_DRIFT_FLOOR)",
     )
     compare.add_argument("--dataset", default=str(DEFAULT_DATASET_PATH), help="Dataset JSON, for email text in the report")
-    compare.add_argument("--report-dir", default=str(DEFAULT_REPORT_DIR), help="Where to write the HTML report")
+    compare.add_argument(
+        "--report-dir",
+        default=env_setting("MRD_REPORT_DIR", str(DEFAULT_REPORT_DIR)),
+        help="Where to write the HTML report (env MRD_REPORT_DIR)",
+    )
+    compare.add_argument("--markdown", help="Also write a Markdown summary here, for a PR comment")
     compare.add_argument("--notify", action="store_true", help="Send the result to Slack if SLACK_WEBHOOK_URL is set")
     compare.set_defaults(func=cmd_compare)
 

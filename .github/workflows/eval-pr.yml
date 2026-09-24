@@ -1,0 +1,123 @@
+# Runs the eval on PRs that change prompts or data, comments the result, and fails on critical regressions.
+#
+# The baseline is produced fresh in this job by running the base branch's active prompt on the same
+# dataset and code. The hard gate therefore never depends on stored state. Only drift and the trend
+# chart use history, restored from the cache that eval-main.yml saves.
+name: eval-pr
+
+on:
+  pull_request:
+    paths:
+      - "prompts/**"
+      - "data/**"
+      - ".github/workflows/eval-pr.yml"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: eval-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  eval:
+    name: eval
+    runs-on: ubuntu-latest
+    # Secrets are not available to PRs from forks, so the eval cannot run there.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    timeout-minutes: 20
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      MRD_DB: ${{ github.workspace }}/runs.db
+      MRD_REPORT_DIR: ${{ github.workspace }}/reports
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - run: uv sync --frozen
+
+      - name: Restore main run history (drift and trend only)
+        uses: actions/cache/restore@v6
+        with:
+          path: runs.db
+          key: runs-db-main-${{ github.run_id }}
+          restore-keys: runs-db-main-
+
+      - name: Validate dataset
+        run: uv run mrd validate-dataset
+
+      - name: Baseline run (active prompt on the base branch)
+        env:
+          GIT_BRANCH: pr-${{ github.event.pull_request.number }}-baseline
+          GIT_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          version="$(git show "$BASE_SHA:prompts/ACTIVE" | tr -d '[:space:]')"
+          mkdir -p "$RUNNER_TEMP/base-prompts"
+          git show "$BASE_SHA:prompts/$version.yaml" > "$RUNNER_TEMP/base-prompts/$version.yaml"
+          echo "Baseline prompt: $version from $BASE_SHA"
+          uv run mrd run --prompt "$RUNNER_TEMP/base-prompts/$version.yaml" --no-cache \
+            --run-id-file "$RUNNER_TEMP/baseline_id"
+
+      - name: Candidate run (active prompt on this PR)
+        env:
+          GIT_BRANCH: pr-${{ github.event.pull_request.number }}
+          GIT_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          echo "Candidate prompt: $(tr -d '[:space:]' < prompts/ACTIVE)"
+          uv run mrd run --no-cache --run-id-file "$RUNNER_TEMP/run_id"
+
+      - name: Compare
+        id: compare
+        run: |
+          set +e
+          uv run mrd compare --run "$(cat "$RUNNER_TEMP/run_id")" --baseline "$(cat "$RUNNER_TEMP/baseline_id")"
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Upload HTML report
+        id: upload
+        uses: actions/upload-artifact@v7
+        with:
+          path: reports/*.html
+          archive: false
+          retention-days: 30
+
+      - name: Write PR comment and notify
+        env:
+          REPORT_URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          uv run mrd compare --run "$(cat "$RUNNER_TEMP/run_id")" --baseline "$(cat "$RUNNER_TEMP/baseline_id")" \
+            --markdown "$RUNNER_TEMP/comment.md" --notify > /dev/null || true
+          cat "$RUNNER_TEMP/comment.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post or update the PR comment
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require("fs");
+            const body = fs.readFileSync(`${process.env.RUNNER_TEMP}/comment.md`, "utf8");
+            const marker = "<!-- mrd-eval-report -->";
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const existing = comments.find((c) => c.body && c.body.startsWith(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+      - name: Fail on critical regression
+        if: steps.compare.outputs.exit_code != '0'
+        run: |
+          echo "::error::Eval failed (exit code ${{ steps.compare.outputs.exit_code }}). See the PR comment and the report artifact."
+          exit 1

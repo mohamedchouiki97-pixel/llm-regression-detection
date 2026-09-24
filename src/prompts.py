@@ -57,3 +57,14 @@ def load_prompt(version_or_path: str) -> PromptConfig:
 def prompt_hash(config: PromptConfig) -> str:
     """Hash of the full prompt config, so editing a prompt without bumping its version is still detected."""
     return hashlib.sha256(config.model_dump_json().encode("utf-8")).hexdigest()[:16]
+
+
+def active_prompt_version(prompts_dir: Path = PROMPTS_DIR) -> str:
+    """The production prompt version, from the one line file prompts/ACTIVE. CI compares a PR against it."""
+    path = prompts_dir / "ACTIVE"
+    if not path.is_file():
+        raise PromptLoadError(f"{path}: not found; it should contain the active prompt version, e.g. v1")
+    version = path.read_text(encoding="utf-8").strip()
+    if not version:
+        raise PromptLoadError(f"{path}: is empty; it should contain the active prompt version, e.g. v1")
+    return version

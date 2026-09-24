@@ -174,3 +174,63 @@ def write_report(context: dict, report_dir: Path | str = DEFAULT_REPORT_DIR) -> 
     path = report_dir / f"{context['run'].run_id}.html"
     path.write_text(render_report(context), encoding="utf-8")
     return path
+
+
+# Markdown, for the PR comment
+
+PR_COMMENT_MARKER = "<!-- mrd-eval-report -->"
+STATUS_ICON = {"pass": "🟢", "warn": "🟡", "fail": "🔴"}
+MAX_COMMENT_CASES = 10
+
+
+def render_markdown(
+    comparison: Comparison, run: RunRecord, baseline: RunRecord | None, report_url: str
+) -> str:
+    """A short PR comment. The hidden marker lets CI update one comment instead of adding a new one per push."""
+    status = comparison.status.value
+    title = f"{STATUS_ICON[status]} {status.upper()}: prompt {run.prompt_version}"
+    if baseline is not None:
+        title += f" vs {baseline.prompt_version}"
+    lines = [PR_COMMENT_MARKER, f"### {title} (dataset v{run.dataset_version})", ""]
+
+    for reason in comparison.reasons:
+        lines.append(f"- {reason}")
+    for note in comparison.notes:
+        lines.append(f"- _{note}_")
+    lines.append("")
+
+    if baseline is not None:
+        lines += ["| Metric | Baseline | This PR | Change |", "|---|---:|---:|---:|"]
+        for m in comparison.overall:
+            if m.name == "mean_summary_score":
+                lines.append(f"| Mean summary score | {m.baseline:.2f} | {m.run:.2f} | {m.delta:+.2f} |")
+            else:
+                label = "Pass rate" if m.name == "pass_rate" else "Category accuracy"
+                lines.append(f"| {label} | {_pct(m.baseline)} | {_pct(m.run)} | {_pp(m.delta)} |")
+        lines.append("")
+
+        lines += ["<details><summary>Pass rate by category, difficulty, and split</summary>", ""]
+        lines += ["| Group | Baseline | This PR | Change |", "|---|---:|---:|---:|"]
+        for d in comparison.by_category + comparison.by_difficulty + comparison.by_split:
+            lines.append(f"| {d.group} | {_pct(d.baseline_rate)} | {_pct(d.run_rate)} | {_pp(d.delta)} |")
+        lines += ["", "</details>", ""]
+
+        regressions = comparison.regressions
+        lines.append(f"**Regressed cases ({len(regressions)})**" + ("" if regressions else ": none"))
+        for change in regressions[:MAX_COMMENT_CASES]:
+            before, after = change.before, change.after
+            predicted = (
+                f"{before.predicted_category.value if before.predicted_category else '-'}"
+                f" → {after.predicted_category.value if after.predicted_category else '-'}"
+            )
+            lines.append(
+                f"- `{change.case_id}` ({after.expected_category.value}, {after.difficulty.value}): "
+                f"predicted {predicted}, summary score {before.summary_score or '-'} → {after.summary_score or '-'}"
+            )
+        if len(regressions) > MAX_COMMENT_CASES:
+            lines.append(f"- and {len(regressions) - MAX_COMMENT_CASES} more in the report")
+        lines.append("")
+
+    link = f"[Full report]({report_url})" if report_url.startswith("http") else f"Full report: `{report_url}`"
+    lines.append(f"{link} · run `{run.run_id}` · git `{run.git_sha[:7]}`")
+    return "\n".join(lines) + "\n"

@@ -2,7 +2,15 @@ import re
 
 from src.compare import compare_runs
 from src.models import Category, GoldenDataset
-from src.report import TREND_RUNS, build_report_context, render_report, trend_points, trend_svg, write_report
+from src.report import (
+    TREND_RUNS,
+    build_report_context,
+    render_markdown,
+    render_report,
+    trend_points,
+    trend_svg,
+    write_report,
+)
 from test_compare import BASE_FAILS, make_run, result, run_with_failures, run_with_rate
 
 
@@ -141,3 +149,37 @@ def test_write_report_uses_run_id(tmp_path):
     path = write_report(build_report_context(run, None, comparison, [], None), tmp_path)
     assert path == tmp_path / "20260924T120000-abc123.html"
     assert path.read_text(encoding="utf-8").startswith("<!doctype html>")
+
+
+# Markdown PR comment
+
+
+def markdown(run, baseline, url="https://github.com/o/r/actions/runs/1/artifacts/2"):
+    return render_markdown(compare_runs(run, baseline, []), run, baseline, url)
+
+
+def test_markdown_has_marker_and_verdict():
+    baseline = run_with_failures("base", BASE_FAILS)
+    run = run_with_failures("new", BASE_FAILS | set(range(50, 62)), minutes=1, prompt_version="v2")
+    text = markdown(run, baseline)
+    assert text.startswith("<!-- mrd-eval-report -->\n### 🔴 FAIL: prompt v2 vs v1 (dataset v3)")
+    assert "| Pass rate | 92.0% | 80.0% | -12.0 pp |" in text
+    assert "[Full report](https://github.com/o/r/actions/runs/1/artifacts/2)" in text
+
+
+def test_markdown_caps_listed_regressions():
+    baseline = run_with_failures("base", BASE_FAILS)
+    run = run_with_failures("new", BASE_FAILS | set(range(50, 62)), minutes=1)
+    text = markdown(run, baseline)
+    assert "**Regressed cases (12)**" in text
+    assert "- `gc-059` (" in text
+    assert "`gc-060`" not in text
+    assert "- and 2 more in the report" in text
+
+
+def test_markdown_without_baseline():
+    text = markdown(run_with_failures("new", BASE_FAILS), None, url="reports/x.html")
+    assert "### 🟢 PASS: prompt v1 (dataset v3)" in text
+    assert "no baseline to compare against" in text
+    assert "| Metric |" not in text
+    assert "Full report: `reports/x.html`" in text

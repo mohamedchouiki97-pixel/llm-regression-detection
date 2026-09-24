@@ -1,0 +1,91 @@
+# Runs the eval on main after prompt or data changes, builds the run history that drift and the
+# trend chart use, and alerts. Main cannot be blocked after the fact, so this job reports rather than gates.
+name: eval-main
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "prompts/**"
+      - "data/**"
+      - ".github/workflows/eval-main.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eval-main
+  cancel-in-progress: false
+
+jobs:
+  eval:
+    name: eval
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      MRD_DB: ${{ github.workspace }}/runs.db
+      MRD_REPORT_DIR: ${{ github.workspace }}/reports
+      GIT_BRANCH: main
+      GIT_SHA: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - run: uv sync --frozen
+
+      - name: Restore main run history
+        uses: actions/cache/restore@v6
+        with:
+          path: runs.db
+          key: runs-db-main-${{ github.run_id }}
+          restore-keys: runs-db-main-
+
+      - name: Validate dataset
+        run: uv run mrd validate-dataset
+
+      - name: Run the active prompt
+        run: uv run mrd run --no-cache --run-id-file "$RUNNER_TEMP/run_id"
+
+      - name: Compare against the previous main run
+        id: compare
+        run: |
+          set +e
+          uv run mrd compare --run "$(cat "$RUNNER_TEMP/run_id")"
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      # Save right after the run, so it joins the history even if a later step fails.
+      - name: Save main run history
+        uses: actions/cache/save@v6
+        with:
+          path: runs.db
+          key: runs-db-main-${{ github.run_id }}
+
+      - name: Upload HTML report
+        id: upload
+        uses: actions/upload-artifact@v7
+        with:
+          path: reports/*.html
+          archive: false
+          retention-days: 90
+
+      - name: Summary and notify
+        env:
+          REPORT_URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          uv run mrd compare --run "$(cat "$RUNNER_TEMP/run_id")" \
+            --markdown "$RUNNER_TEMP/summary.md" --notify > /dev/null || true
+          cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Mark the run failed on critical regression
+        if: steps.compare.outputs.exit_code != '0'
+        run: |
+          echo "::error::Main now fails the eval against the previous main run. See the report artifact."
+          exit 1
