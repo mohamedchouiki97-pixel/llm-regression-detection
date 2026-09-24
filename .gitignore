@@ -13,3 +13,6 @@ __pycache__/
 *.sqlite
 *.db
 reports/
+
+# Local Claude Code instructions (imports PLAN.md)
+CLAUDE.md
