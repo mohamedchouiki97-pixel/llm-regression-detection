@@ -23,6 +23,8 @@ DEFAULT_FAIL_DELTA = 0.08
 DEFAULT_DRIFT_FLOOR = 0.88
 DRIFT_WINDOW = 7
 SIGNIFICANCE_LEVEL = 0.05
+# Above this share of errored cases in either run, the comparison is too incomplete to trust.
+DEFAULT_MAX_ERROR_RATE = 0.05
 
 # Deltas are differences of fractions, so 0.92 - 0.84 can come out as 0.07999999999999996.
 _EPSILON = 1e-9
@@ -119,8 +121,14 @@ def compare_runs(
     warn_delta: float = DEFAULT_WARN_DELTA,
     fail_delta: float = DEFAULT_FAIL_DELTA,
     drift_floor: float = DEFAULT_DRIFT_FLOOR,
+    max_error_rate: float = DEFAULT_MAX_ERROR_RATE,
 ) -> Comparison:
-    """Pure function: all run lookups happen in the caller."""
+    """Pure function: all run lookups happen in the caller.
+
+    Errored cases are infrastructure failures, not answers, so they are left out of every delta and of
+    McNemar. Otherwise a rate limited run would look like a quality regression. Too many errors fail
+    the comparison as incomplete, with a reason that says so.
+    """
     reasons: list[str] = []
     notes: list[str] = []
     status = Status.PASS
@@ -139,9 +147,18 @@ def compare_runs(
             f"is below the floor {drift.floor:.0%}"
         )
 
-    if run.n_errors:
-        raise_to(Status.WARN)
-        reasons.append(f"{run.n_errors} cases errored and were counted as fails")
+    for label, checked in [("run", run), ("baseline", baseline)]:
+        if checked is None or not checked.n_errors:
+            continue
+        if checked.n_errors / checked.n_cases > max_error_rate + _EPSILON:
+            raise_to(Status.FAIL)
+            reasons.append(
+                f"eval incomplete: {checked.n_errors}/{checked.n_cases} cases errored in the {label} "
+                f"(limit {max_error_rate:.0%}); rerun before trusting this comparison"
+            )
+        else:
+            raise_to(Status.WARN)
+            reasons.append(f"{checked.n_errors} cases errored in the {label} and are left out of the comparison")
 
     if baseline is None:
         notes.append("no baseline to compare against")
@@ -174,10 +191,15 @@ def compare_runs(
     unmatched = sorted(set(before_by_id) ^ set(after_by_id))
     if unmatched:
         notes.append(f"{len(unmatched)} cases appear in only one run and are not compared case by case")
+    scored = [c for c in shared if before_by_id[c].error is None and after_by_id[c].error is None]
+    if len(scored) < len(shared):
+        notes.append(f"compared {len(scored)} cases scored in both runs")
+    before_results = [before_by_id[c] for c in scored]
+    after_results = [after_by_id[c] for c in scored]
 
     regressions, improvements = [], []
     prediction_changes = score_changes = 0
-    for case_id in shared:
+    for case_id in scored:
         before, after = before_by_id[case_id], after_by_id[case_id]
         if before.passed and not after.passed:
             regressions.append(CaseChange(case_id=case_id, before=before, after=after))
@@ -192,7 +214,7 @@ def compare_runs(
         ("category_accuracy", category_accuracy),
         ("mean_summary_score", mean_summary_score),
     ]:
-        before_value, after_value = metric(baseline.results), metric(run.results)
+        before_value, after_value = metric(before_results), metric(after_results)
         overall.append(MetricDelta(name=name, baseline=before_value, run=after_value, delta=after_value - before_value))
 
     p = mcnemar_exact(len(regressions), len(improvements))
@@ -218,12 +240,12 @@ def compare_runs(
         fail_delta=fail_delta,
         overall=overall,
         by_category=group_deltas(
-            baseline.results, run.results, lambda r: r.expected_category.value, [c.value for c in Category]
+            before_results, after_results, lambda r: r.expected_category.value, [c.value for c in Category]
         ),
         by_difficulty=group_deltas(
-            baseline.results, run.results, lambda r: r.difficulty.value, [d.value for d in Difficulty]
+            before_results, after_results, lambda r: r.difficulty.value, [d.value for d in Difficulty]
         ),
-        by_split=group_deltas(baseline.results, run.results, lambda r: r.split.value, [s.value for s in Split]),
+        by_split=group_deltas(before_results, after_results, lambda r: r.split.value, [s.value for s in Split]),
         regressions=regressions,
         improvements=improvements,
         unmatched_case_ids=unmatched,

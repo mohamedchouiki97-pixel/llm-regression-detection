@@ -30,11 +30,31 @@ RETRYABLE_ERRORS = (openai.RateLimitError, openai.APIConnectionError, openai.Int
 CASE_ERRORS = (openai.OpenAIError, ClassificationError, JudgeError)
 
 DEFAULT_CONCURRENCY = 8
-MAX_RETRIES = 4
+# Six retries with doubling waits span about two minutes, enough to outlast a per minute rate limit window.
+MAX_RETRIES = 6
 BASE_DELAY_S = 1.0
+MAX_DELAY_S = 60.0
 
 ClassifyFn = Callable[[str, PromptConfig], Awaitable[ClassifyOutput]]
 JudgeFn = Callable[[str, str, str], Awaitable[JudgeOutput]]
+
+
+def retry_after_seconds(exc: Exception) -> float | None:
+    """The wait the API asked for, from the retry-after-ms or retry-after header, if present."""
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if not headers:
+        return None
+    for name, scale in (("retry-after-ms", 0.001), ("retry-after", 1.0)):
+        value = headers.get(name)
+        if value is None:
+            continue
+        try:
+            return float(value) * scale
+        except ValueError:
+            # retry-after may also be an HTTP date; fall back to our own backoff then.
+            return None
+    return None
 
 
 async def with_retries(
@@ -43,14 +63,19 @@ async def with_retries(
     base_delay: float = BASE_DELAY_S,
     sleep: Callable[[float], Awaitable] = asyncio.sleep,
 ):
-    """Retry temporary API errors with exponential backoff and jitter: about 1s, 2s, 4s, 8s."""
+    """Retry temporary API errors with exponential backoff and jitter (about 1s, 2s, 4s, ... capped at 60s).
+
+    When the API says how long to wait, wait at least that long.
+    """
     for attempt in range(max_retries + 1):
         try:
             return await call()
-        except RETRYABLE_ERRORS:
+        except RETRYABLE_ERRORS as exc:
             if attempt == max_retries:
                 raise
-            await sleep(base_delay * 2**attempt * random.uniform(0.75, 1.25))
+            delay = base_delay * 2**attempt * random.uniform(0.75, 1.25)
+            delay = max(delay, retry_after_seconds(exc) or 0.0)
+            await sleep(min(delay, MAX_DELAY_S))
 
 
 async def _cached(cache: Cache, key: str, call: Callable[[], Awaitable], model_type, sleep):

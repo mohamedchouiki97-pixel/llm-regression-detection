@@ -16,6 +16,7 @@ from src.classifier import ClassificationError, classify_email
 from src.compare import (
     DEFAULT_DRIFT_FLOOR,
     DEFAULT_FAIL_DELTA,
+    DEFAULT_MAX_ERROR_RATE,
     DEFAULT_WARN_DELTA,
     DRIFT_WINDOW,
     compare_runs,
@@ -275,6 +276,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
         warn_delta=args.warn_delta,
         fail_delta=args.fail_delta,
         drift_floor=args.drift_floor,
+        max_error_rate=args.max_error_rate,
     )
     print_comparison(comparison)
 
@@ -377,6 +379,13 @@ def main() -> None:
         default=env_setting("MRD_DRIFT_FLOOR", DEFAULT_DRIFT_FLOOR, float),
         help=f"Warn when the {DRIFT_WINDOW} run average pass rate is below this "
         f"(default {DEFAULT_DRIFT_FLOOR}, env MRD_DRIFT_FLOOR)",
+    )
+    compare.add_argument(
+        "--max-error-rate",
+        type=float,
+        default=env_setting("MRD_MAX_ERROR_RATE", DEFAULT_MAX_ERROR_RATE, float),
+        help=f"Fail as incomplete when more cases than this share errored (default {DEFAULT_MAX_ERROR_RATE}, "
+        "env MRD_MAX_ERROR_RATE)",
     )
     compare.add_argument("--dataset", default=str(DEFAULT_DATASET_PATH), help="Dataset JSON, for email text in the report")
     compare.add_argument(
