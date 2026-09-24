@@ -35,6 +35,11 @@ MAX_RETRIES = 6
 BASE_DELAY_S = 1.0
 MAX_DELAY_S = 60.0
 
+
+class QuotaExhaustedError(Exception):
+    """The OpenAI account has no credits left. Every remaining call would fail, so the run stops."""
+
+
 ClassifyFn = Callable[[str, PromptConfig], Awaitable[ClassifyOutput]]
 JudgeFn = Callable[[str, str, str], Awaitable[JudgeOutput]]
 
@@ -71,6 +76,11 @@ async def with_retries(
         try:
             return await call()
         except RETRYABLE_ERRORS as exc:
+            # An empty balance also arrives as HTTP 429, but waiting cannot fix it.
+            if getattr(exc, "code", None) == "insufficient_quota":
+                raise QuotaExhaustedError(
+                    "OpenAI account has no credits (insufficient_quota); add credits and rerun"
+                ) from exc
             if attempt == max_retries:
                 raise
             delay = base_delay * 2**attempt * random.uniform(0.75, 1.25)

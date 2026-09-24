@@ -105,7 +105,7 @@ def test_report_shows_verdict_and_regressed_cases():
     assert "FAIL" in page
     assert "Regressed cases (10)" in page
     for i in range(50, 60):
-        assert f'id="gc-{i:03d}"' in page
+        assert f'id="regressed-gc-{i:03d}"' in page
     assert "Email 50" in page and "Ideal summary 50." in page
 
 
@@ -117,6 +117,17 @@ def test_report_shows_judge_reasoning_side_by_side():
     page = render(run, baseline, dataset=dataset_for(1))
     assert "Misses the refund request entirely." in page
     assert "Matches the reference." in page
+
+
+def test_case_ids_are_unique_across_sections():
+    baseline = run_with_failures("base", BASE_FAILS)
+    run = run_with_failures("new", BASE_FAILS | {50}, minutes=1)
+    page = render(run, baseline, dataset=dataset_for())
+    # gc-050 is both a regression and a failing case in this run.
+    assert page.count('id="regressed-gc-050"') == 1
+    assert page.count('id="failing-gc-050"') == 1
+    ids = re.findall(r'<article class="card case" id="([^"]+)"', page)
+    assert len(ids) == len(set(ids))
 
 
 def test_report_escapes_email_html():

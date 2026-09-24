@@ -1,6 +1,8 @@
 [project]
 name = "model-regression-detection"
 version = "0.1.0"
+description = "CI gate that catches LLM prompt regressions against a hand-labeled golden dataset"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "jinja2>=3.1.6",

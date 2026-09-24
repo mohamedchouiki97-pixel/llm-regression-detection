@@ -98,6 +98,7 @@ def meta_run(run_id: str, minutes: int, **overrides) -> RunRecord:
     run = make_run(run_id)
     run.created_at = run.created_at + timedelta(minutes=minutes)
     run.git_dirty = False
+    run.n_errors = 0
     for name, value in overrides.items():
         setattr(run, name, value)
     return run
@@ -114,14 +115,27 @@ def test_comparable_main_runs_filters_and_orders(tmp_path):
         meta_run("old-dataset", 50, dataset_version=1),
         meta_run("other-judge", 60, judge_version="j2"),
         meta_run("other-threshold", 70, summary_threshold=3),
+        meta_run("broken", 80, n_errors=63),
+        meta_run("few-errors", 5, n_errors=1),
         meta_run("after-candidate", 200),
         candidate,
     ]:
         save_run(run, db)
 
     runs = comparable_main_runs(candidate, db)
+    # "broken" and "few-errors" are over the 5% error limit for these 2 case runs, so both are skipped.
     assert [r.run_id for r in runs] == ["main-new", "main-old"]
     assert [r.run_id for r in comparable_main_runs(candidate, db, limit=1)] == ["main-new"]
+
+
+def test_error_limit_is_relative_to_run_size(tmp_path):
+    db = tmp_path / "runs.db"
+    ok = meta_run("ok", 0, n_cases=100, n_errors=5)
+    too_many = meta_run("too-many", 1, n_cases=100, n_errors=6)
+    candidate = meta_run("candidate", 10)
+    for run in (ok, too_many, candidate):
+        save_run(run, db)
+    assert [r.run_id for r in comparable_main_runs(candidate, db)] == ["ok"]
 
 
 def test_comparable_main_runs_excludes_the_run_itself(tmp_path):

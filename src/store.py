@@ -5,6 +5,7 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
+from src.compare import DEFAULT_MAX_ERROR_RATE
 from src.models import CaseResult, RunRecord
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "runs.db"
@@ -111,15 +112,23 @@ def latest_run_id(path: Path | str = DEFAULT_DB_PATH) -> str | None:
     return row["run_id"] if row else None
 
 
-def comparable_main_runs(run: RunRecord, path: Path | str = DEFAULT_DB_PATH, limit: int | None = None) -> list[RunRecord]:
-    """Clean runs on main made before this run, with the same dataset, judge, and threshold. Newest first.
+def comparable_main_runs(
+    run: RunRecord,
+    path: Path | str = DEFAULT_DB_PATH,
+    limit: int | None = None,
+    max_error_rate: float = DEFAULT_MAX_ERROR_RATE,
+) -> list[RunRecord]:
+    """Clean, complete runs on main made before this run, with the same dataset, judge, and threshold.
 
-    These are the only runs that make a fair baseline or belong in the drift window.
+    Newest first. These are the only runs that make a fair baseline or belong in the drift window. A run
+    with too many errors (for example, one made while the API account had no credits) is skipped, so it
+    cannot become the baseline for every later comparison.
     """
     query = """
         SELECT run_id FROM runs
         WHERE git_branch = 'main' AND git_dirty = 0
           AND dataset_version = ? AND judge_version = ? AND summary_threshold = ?
+          AND n_errors <= ? * n_cases
           AND created_at < ? AND run_id != ?
         ORDER BY created_at DESC
     """
@@ -127,6 +136,7 @@ def comparable_main_runs(run: RunRecord, path: Path | str = DEFAULT_DB_PATH, lim
         run.dataset_version,
         run.judge_version,
         run.summary_threshold,
+        max_error_rate,
         run.model_dump(mode="json")["created_at"],
         run.run_id,
     ]

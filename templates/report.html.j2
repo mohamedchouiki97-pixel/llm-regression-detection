@@ -88,7 +88,8 @@ h3 { font-size: 14px; margin: 0; }
 table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
 th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
-td.num, th.num { text-align: right; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+td.group { white-space: nowrap; }
 .down { color: var(--bad-text); font-weight: 600; }
 .up { color: var(--good-text); font-weight: 600; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -199,7 +200,7 @@ details > summary { cursor: pointer; font-weight: 600; margin: 24px 0 12px; }
       <thead><tr><th></th><th class="num">Base</th><th class="num">Run</th><th class="num">Change</th></tr></thead>
       <tbody>
       {% for d in deltas %}
-        <tr><td>{{ d.group }} <span class="sub">({{ d.run_n }})</span></td><td class="num">{{ d.baseline_rate | pct }}</td><td class="num">{{ d.run_rate | pct }}</td>{{ delta_cell(d.delta) }}</tr>
+        <tr><td class="group">{{ d.group }} <span class="sub">({{ d.run_n }})</span></td><td class="num">{{ d.baseline_rate | pct }}</td><td class="num">{{ d.run_rate | pct }}</td>{{ delta_cell(d.delta) }}</tr>
       {% endfor %}
       </tbody>
     </table>
@@ -256,8 +257,9 @@ details > summary { cursor: pointer; font-weight: 600; margin: 24px 0 12px; }
 </div>
 {% endmacro %}
 
-{% macro case_card(v, show_before=True) %}
-<article class="card case" id="{{ v.case_id }}">
+{% macro case_card(v, section, show_before=True) %}
+{# A case can appear in more than one section, so ids are prefixed to stay unique. #}
+<article class="card case" id="{{ section }}-{{ v.case_id }}">
   <div class="case-head">
     <h3>{{ v.case_id }}</h3>
     <span class="pill">expected {{ v.after.expected_category.value }}</span>
@@ -282,17 +284,17 @@ details > summary { cursor: pointer; font-weight: 600; margin: 24px 0 12px; }
 
 {% if baseline %}
 <h2>Regressed cases ({{ regressions | length }})</h2>
-{% for v in regressions %}{{ case_card(v) }}{% else %}<p class="empty">No case went from pass to fail.</p>{% endfor %}
+{% for v in regressions %}{{ case_card(v, "regressed") }}{% else %}<p class="empty">No case went from pass to fail.</p>{% endfor %}
 
 <details>
   <summary>Improved cases ({{ improvements | length }})</summary>
-  {% for v in improvements %}{{ case_card(v) }}{% else %}<p class="empty">No case went from fail to pass.</p>{% endfor %}
+  {% for v in improvements %}{{ case_card(v, "improved") }}{% else %}<p class="empty">No case went from fail to pass.</p>{% endfor %}
 </details>
 {% endif %}
 
 <details {% if not baseline %}open{% endif %}>
   <summary>All failing cases in this run ({{ failures | length }})</summary>
-  {% for v in failures %}{{ case_card(v, show_before=False) }}{% else %}<p class="empty">Every case passed.</p>{% endfor %}
+  {% for v in failures %}{{ case_card(v, "failing", show_before=False) }}{% else %}<p class="empty">Every case passed.</p>{% endfor %}
 </details>
 
 </main>
