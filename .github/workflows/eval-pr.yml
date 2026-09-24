@@ -5,12 +5,10 @@
 # chart use history, restored from the cache that eval-main.yml saves.
 name: eval-pr
 
+# Runs on every PR so the required "eval" check always reports. The changes job decides whether the
+# eval itself is needed; a skipped job counts as passing for a required check.
 on:
   pull_request:
-    paths:
-      - "prompts/**"
-      - "data/**"
-      - ".github/workflows/eval-pr.yml"
 
 permissions:
   contents: read
@@ -21,11 +19,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.diff.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Did this PR change prompts, data, or this workflow?
+        id: diff
+        run: |
+          changed="$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")"
+          echo "$changed"
+          if echo "$changed" | grep -qE '^(prompts/|data/|\.github/workflows/eval-pr\.yml$)'; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          fi
+
   eval:
     name: eval
+    needs: changes
     runs-on: ubuntu-latest
-    # Secrets are not available to PRs from forks, so the eval cannot run there.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # Skip when nothing relevant changed. Secrets are not available to PRs from forks, so skip those too.
+    if: needs.changes.outputs.relevant == 'true' && github.event.pull_request.head.repo.full_name == github.repository
     timeout-minutes: 20
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
