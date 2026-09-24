@@ -13,6 +13,8 @@ ENV UV_COMPILE_BYTECODE=1 \
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
+# pyproject.toml names README.md as the package readme, so the build needs it.
+COPY README.md ./
 COPY src ./src
 COPY templates ./templates
 COPY prompts ./prompts
