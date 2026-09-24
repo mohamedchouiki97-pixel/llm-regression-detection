@@ -34,7 +34,7 @@ from src.models import (
 )
 from src.prompts import PromptLoadError, active_prompt_version, load_prompt
 from src.report import DEFAULT_REPORT_DIR, TREND_RUNS, build_report_context, render_markdown, write_report
-from src.runner import DEFAULT_CONCURRENCY, build_run_record, git_info, run_eval
+from src.runner import DEFAULT_CONCURRENCY, QuotaExhaustedError, build_run_record, git_info, run_eval
 from src.scoring import DEFAULT_SUMMARY_THRESHOLD, JUDGE_MODEL, judge_summary
 from src.store import DEFAULT_DB_PATH, comparable_main_runs, latest_run_id, load_run, save_run
 
@@ -185,8 +185,9 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     try:
         run = asyncio.run(run_full_eval(dataset, config, args))
-    except openai.OpenAIError as exc:
-        # Reached only for setup problems such as a missing API key; per-case errors are recorded instead.
+    except (openai.OpenAIError, QuotaExhaustedError) as exc:
+        # Setup problems (a missing API key) and an empty balance stop the run; nothing is stored.
+        # Per-case errors are recorded instead.
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

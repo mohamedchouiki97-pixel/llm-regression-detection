@@ -16,7 +16,7 @@ from src.models import (
     JudgeVerdict,
     PromptConfig,
 )
-from src.runner import build_run_record, run_eval, with_retries
+from src.runner import QuotaExhaustedError, build_run_record, run_eval, with_retries
 
 REQUEST = httpx2.Request("POST", "https://api.openai.com/v1/chat/completions")
 
@@ -59,6 +59,27 @@ def test_retry_then_success():
     assert asyncio.run(with_retries(call, sleep=sleep)) == "ok"
     assert state["calls"] == 3
     assert len(sleep.delays) == 2
+
+
+def test_no_credits_stops_immediately():
+    response = httpx2.Response(429, request=REQUEST)
+    error = openai.RateLimitError(
+        "You have no credits remaining", response=response, body={"code": "insufficient_quota"}
+    )
+    call, state = flaky([error])
+    sleep = FakeSleep()
+    with pytest.raises(QuotaExhaustedError, match="no credits"):
+        asyncio.run(with_retries(call, sleep=sleep))
+    assert state["calls"] == 1
+    assert sleep.delays == []
+
+
+def test_no_credits_aborts_the_whole_run():
+    data = dataset(6)
+    response = httpx2.Response(429, request=REQUEST)
+    error = openai.RateLimitError("no credits", response=response, body={"code": "insufficient_quota"})
+    with pytest.raises(QuotaExhaustedError):
+        run(data, FakeClassifier(data, errors={"email 3": error}), FakeJudge())
 
 
 def test_default_retries_outlast_a_rate_limit_window():
