@@ -77,7 +77,7 @@ The dataset is [data/golden.json](data/golden.json). Labels follow [data/LABELIN
 
 1. If the case depends on a rule the guide does not cover, update the guide first.
 2. Add the case. The id is `gc-` plus the next unused number. **Never reuse an id**, even after deleting a case, because run comparisons match cases by id.
-3. Assign `split` by the mechanical rule: within each (category, difficulty) group sorted by id, every third case is `test`. Do not choose splits by hand.
+3. Assign `split` by the mechanical rule: within each (category, difficulty) group sorted by id, every third case is `test`. Do not choose splits by hand. Prompts are tuned by looking only at dev cases; test cases are held out to check that a gain generalizes. The gate still scores all 100, because its job is to catch a regression anywhere, so read the split row in the report: a gain on dev that does not show on test is probably overfitting. v2 was tuned on dev and still improved on test (dev 64/70 to 67/70, test 28/30 to 30/30).
 4. Bump `version` and add a changelog entry. Validation fails if the version has no changelog entry.
 5. Run `uv run mrd validate-dataset`. It reports all errors at once with case ids, and warns about duplicate emails and thin categories.
 
