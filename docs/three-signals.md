@@ -66,4 +66,4 @@ Keeping the signals separate costs a slightly longer PR comment. In return, each
 ## What is still not covered
 
 - **Per-category damage.** v2's first version passed overall while losing 7.7 points on billing. Per-category deltas are reported, not gated, because about 25 cases per category make single flips look like 4 point swings. A human reading the table caught it. A per-category gate with a wide threshold, or a significance test per category, would be the next step with a larger dataset.
-- **Judge drift.** If the judge model changes behavior over time, every signal inherits it. The judge is now pinned to a dated snapshot (`gpt-4o-2024-08-06`, judge version j2), so it cannot change silently. Noise should still be measured again whenever the snapshot is replaced.
+- **Judge drift.** If the judge model changes behavior over time, every signal inherits it. The judge is now pinned to a dated snapshot (`gpt-4o-2024-08-06`, judge version j2), so it cannot change silently. Noise should still be measured again whenever the snapshot is replaced, and how well the judge agrees with a human is measured separately ([judge_agreement.md](judge_agreement.md)).

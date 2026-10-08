@@ -38,6 +38,7 @@ src/
   runner.py         async eval runner
   cache.py          LLM response cache
   scoring.py        scoring dimensions + LLM judge
+  agreement.py      judge vs human agreement
   compare.py        diffing + statistics + drift
   store.py          SQLite run history
   report.py         HTML report
@@ -137,4 +138,6 @@ Done when:
 ## Phase 7: Portfolio polish
 - README written like internal onboarding docs: what it does, setup, how to add golden cases, how to tune thresholds, architecture decisions with rationale
 - Short write-up on one design decision (why statistical testing and slow drift are tracked separately from threshold deltas): docs/three-signals.md
+- Judge vs human agreement tooling: export a stratified, blind sample of judged cases as CSV, then report exact agreement, pass/fail agreement, and quadratic weighted kappa against human scores (docs/judge_agreement.md)
+- (Me) Score the agreement sample by hand
 - (Me) Record a 3 minute Loom: change prompt, PR, eval runs, Slack alert, report walkthrough
