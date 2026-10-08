@@ -1,4 +1,4 @@
-"""Load, check, and summarize the hand-written golden dataset."""
+"""Load, check, and summarize the golden dataset."""
 
 import json
 from collections import Counter
