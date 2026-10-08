@@ -18,7 +18,7 @@ The LLM feature under test is a customer support email classifier. It is intenti
 
 ## Tech stack
 - Python 3.11+, managed with uv
-- OpenAI API: gpt-4o-mini for the classifier, gpt-4o for LLM-as-judge
+- OpenAI API: gpt-4o-mini for the classifier, gpt-4o (pinned to a dated snapshot) for LLM-as-judge
 - Pydantic v2 for all schemas
 - SQLite for run history, JSON for the golden dataset, YAML for prompts
 - Jinja2 for the HTML report

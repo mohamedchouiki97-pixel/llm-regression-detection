@@ -98,7 +98,7 @@ Every setting has a default, an environment variable, and a command line flag (t
 | `MRD_DB`, `MRD_REPORT_DIR` | `runs.db`, `reports/` | Where history and reports go |
 | `SLACK_WEBHOOK_URL`, `REPORT_URL` | unset | Slack posting and the report link in messages |
 
-Why these values: three identical runs flipped 0 cases, so a 3 point warning is well above noise for this prompt ([docs/judge_noise.md](docs/judge_noise.md)). One case is 1 point, so tighter thresholds would react to single flips. If you change the judge, the dataset, or the model, measure noise again before trusting the thresholds.
+Why these values: three identical runs flipped 0 cases, so a 3 point warning is well above noise for this prompt ([docs/judge_noise.md](docs/judge_noise.md)). One case is 1 point, so tighter thresholds would react to single flips. If you change the judge, the dataset, or the model, measure noise again before trusting the thresholds. Changing the judge model or rubric means bumping `JUDGE_VERSION` in `src/scoring.py`, which, like a dataset change, starts a new comparison history.
 
 ### Read a report
 
@@ -117,7 +117,7 @@ src/
   golden.py         dataset loading, cross case checks, coverage table
   runner.py         async runner: concurrency limit, retries, cache, run record
   cache.py          file cache of LLM responses for cheap development reruns
-  scoring.py        category match, gpt-4o judge with a written rubric, cost
+  scoring.py        category match, gpt-4o judge (pinned snapshot) with a written rubric, cost
   store.py          SQLite run history, baseline and history lookups
   compare.py        diff, thresholds, McNemar exact test, drift, final status
   report.py         HTML report with an inline SVG trend chart, PR comment Markdown
@@ -127,7 +127,7 @@ templates/          Jinja2 report template
 .github/workflows/  eval-pr (the gate), eval-main (history), tests (pytest and Docker)
 ```
 
-A run classifies every case, has gpt-4o judge each summary against the ideal one (reasoning first, then a 1 to 5 score), and stores the run and every per-case result in SQLite. A case passes when the category matches and the summary scores at least 4. A comparison pairs two runs by case id.
+A run classifies every case, has gpt-4o (pinned to the `gpt-4o-2024-08-06` snapshot) judge each summary against the ideal one (reasoning first, then a 1 to 5 score), and stores the run and every per-case result in SQLite. A case passes when the category matches and the summary scores at least 4. A comparison pairs two runs by case id.
 
 ## Design decisions
 

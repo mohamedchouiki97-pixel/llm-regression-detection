@@ -4,9 +4,11 @@ from openai import AsyncOpenAI
 
 from src.models import CaseResult, ClassifyOutput, GoldenCase, JudgeOutput, JudgeVerdict
 
-JUDGE_MODEL = "gpt-4o"
-# Bump when the rubric or judge prompt changes: scores from different versions are not comparable.
-JUDGE_VERSION = "j1"
+# A dated snapshot, so the judge cannot change under us when OpenAI moves the gpt-4o alias.
+JUDGE_MODEL = "gpt-4o-2024-08-06"
+# Bump when the judge model, rubric, or judge prompt changes: scores from different versions are not comparable.
+# j1 used the undated gpt-4o alias, which resolved to gpt-4o-2024-08-06.
+JUDGE_VERSION = "j2"
 
 DEFAULT_SUMMARY_THRESHOLD = 4
 
