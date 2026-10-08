@@ -165,6 +165,10 @@ History and reports land in `./out`. The image contains no `.git`, so runs are l
 - **The test split is slightly contaminated.** While fixing v2's pricing rule, one test case (gc-029) was inspected.
 - **Slack is wired but not connected.** Messages are built and previewed; posting needs a webhook secret.
 
+## How this was built
+
+Built with Claude Code. I designed the phases, the gate logic, and the labeling guide, and reviewed every change.
+
 ## More
 
 - [PLAN.md](PLAN.md): the phased build plan this project followed
