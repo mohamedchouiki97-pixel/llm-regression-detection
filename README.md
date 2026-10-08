@@ -1,5 +1,8 @@
 # LLM Regression Detection
 
+[![tests](https://github.com/mohamedchouiki97-pixel/llm-regression-detection/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/mohamedchouiki97-pixel/llm-regression-detection/actions/workflows/tests.yml)
+[![eval-main](https://github.com/mohamedchouiki97-pixel/llm-regression-detection/actions/workflows/eval-main.yml/badge.svg?branch=main)](https://github.com/mohamedchouiki97-pixel/llm-regression-detection/actions/workflows/eval-main.yml)
+
 A CI gate for an LLM feature. Every pull request that changes a prompt or the golden dataset is evaluated against the production prompt on 100 labeled cases. The result is posted on the PR, and a critical regression blocks the merge.
 
 This is a public reimplementation of an evaluation system I built for a client. The classifier and dataset are stand-ins because the client's data is confidential; the gate design is the same.
