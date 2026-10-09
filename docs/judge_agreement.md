@@ -1,6 +1,6 @@
 # Judge vs human agreement
 
-**Status: not measured yet.** The tooling is in place; the human scoring has not been done.
+Measured 2026-10-09 on 30 cases from the deliberately degraded prompt's run. Short version: the judge agrees with a human only fairly (quadratic weighted kappa 0.35) and is stricter than the human on terse summaries, mostly because it penalizes missing details that are in the email but not in the reference summary.
 
 ## Why this matters
 
@@ -25,24 +25,38 @@ Caveats: 30 cases give a wide confidence interval on kappa, and stratifying on t
 
 ## Results
 
-To be filled in after scoring.
-
 | Item | Value |
 |---|---|
-| Run | |
-| Prompt, judge | |
-| Date scored | |
-| Cases | |
-| Exact agreement | |
-| Pass/fail agreement | |
-| Weighted kappa | |
+| Run | `20260924T154822-89f688` (experiments/degraded.yaml: no category definitions, summaries of five words or fewer) |
+| Prompt, judge | degraded, gpt-4o-mini; judge j1 (the undated gpt-4o alias, which resolves to the same `gpt-4o-2024-08-06` snapshot as j2) |
+| Date scored | 2026-10-09 |
+| Cases | 30, stratified on the judge's score: 5 scored 2, 12 scored 3, 12 scored 4, 1 scored 5 (every 2 and 5 in the run) |
+| Exact agreement | 30.0% (9/30) |
+| Pass/fail agreement | 60.0% (18/30, pass at >= 4) |
+| Weighted kappa | 0.35 (quadratic) |
 
-Confusion table:
+Confusion table (rows: human score, columns: judge score):
 
 ```
-(paste the output of mrd judge-agreement here)
+           1    2    3    4    5
+      1    0    0    0    0    0
+      2    0    0    0    0    0
+      3    0    3    4    2    0
+      4    0    2    6    4    0
+      5    0    0    2    6    1
 ```
 
-Findings:
+The filled sample is [judge_sample_20260924T154822-89f688.csv](judge_sample_20260924T154822-89f688.csv). Reproduce with `uv run mrd judge-agreement --csv docs/judge_sample_20260924T154822-89f688.csv --run 20260924T154822-89f688` (the run lives in a local `runs.db`).
 
-- 
+## Findings
+
+1. **Agreement is fair, not good.** A kappa of 0.35 means the judge ranks summaries in roughly the same order as the human, with a lot of disagreement. Most disagreements are one point apart; none are more than two.
+2. **The judge is stricter than the human on terse summaries.** It scored lower than the human on 19 cases and higher on 2. The human passed 21 of 30 summaries; the judge passed 13. Of the 12 pass/fail disagreements, 10 are the human passing a summary the judge failed.
+3. **The judge grades against the email, not only the reference.** The rubric says to use the reference summary as the standard. In 6 of the 12 pass/fail disagreements (gc-020, gc-023, gc-029, gc-057, gc-060, gc-075), the judge's reasoning cites a missing detail that is in the email but not in the reference, such as "the customer has tried to contact support twice" or "the badge shows 12 unread notifications".
+
+## Implications
+
+- **For this gate, the error is in the safe direction, but it inflates the size of a regression.** A judge that is harsher than a human on vague summaries makes a bad prompt look worse, not better. A rough estimate: applying the human's pass rate for each judge score in this sample (2: 2 of 5, 3: 8 of 12, 4: 10 of 12, 5: 1 of 1) to the 90 degraded cases with the right category gives a pass rate near 66%, against the judge's 42%. PR #2 would still have failed, by roughly 27 points instead of 49. The baseline was not re-scored by a human, so this is an estimate, not a measurement.
+- **It is a risk near the threshold.** A prompt that writes short but correct summaries could be failed by the judge where a human would pass it. That is a false alarm, not a missed regression, but it would cost reviewer time.
+- **Not measured: good prompts.** This sample comes from a deliberately bad prompt. On v1 and v2 the judge gives only 4s and 5s, and whether a human agrees there is still open.
+- **Possible fix.** Tell the judge explicitly not to penalize details that are absent from the reference summary, bump `JUDGE_VERSION`, and repeat this measurement and [judge_noise.md](judge_noise.md). Not done yet.
