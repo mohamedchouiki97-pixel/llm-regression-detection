@@ -1,6 +1,8 @@
 # Judge and classifier noise
 
-Measured 2026-09-24 on prompt v1 (gpt-4o-mini, temperature 0), judge j1 (gpt-4o, temperature 0), dataset v3 (100 cases), summary pass threshold 4.
+Measured 2026-09-24 on prompt v1 (gpt-4o-mini, temperature 0), judge j1 (the undated gpt-4o alias, temperature 0), dataset v3 (100 cases), summary pass threshold 4.
+
+Judge j2 pins the same model to the dated snapshot `gpt-4o-2024-08-06`. On 2026-10-08 the `gpt-4o` alias still resolved to that snapshot, so these results should carry over to j2, but they were not re-measured.
 
 ## Why this matters
 

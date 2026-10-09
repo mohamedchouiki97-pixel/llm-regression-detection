@@ -10,6 +10,18 @@ import openai
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
+from src.agreement import (
+    SCORES,
+    AgreementInputError,
+    confusion_matrix,
+    exact_agreement,
+    judged_results,
+    pass_fail_agreement,
+    quadratic_weighted_kappa,
+    read_scored_csv,
+    stratified_sample,
+    write_sample_csv,
+)
 from src.alerts import build_slack_message, notify
 from src.cache import DEFAULT_CACHE_DIR, Cache
 from src.classifier import ClassificationError, classify_email
@@ -306,6 +318,72 @@ def cmd_compare(args: argparse.Namespace) -> int:
     return 1 if comparison.status is Status.FAIL else 0
 
 
+def cmd_export_judge_sample(args: argparse.Namespace) -> int:
+    if args.n < 1:
+        print("error: --n must be at least 1", file=sys.stderr)
+        return 2
+    out = Path(args.out or f"judge_sample_{args.run}.csv")
+    if out.exists():
+        # It may already hold human scores.
+        print(f"error: {out} already exists; choose another --out or delete it", file=sys.stderr)
+        return 2
+    try:
+        run = load_run(args.run, args.db)
+        dataset = load_dataset(args.dataset)
+    except KeyError as exc:
+        print(f"error: {exc.args[0]}", file=sys.stderr)
+        return 2
+    except DatasetLoadError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if dataset.version != run.dataset_version:
+        print(
+            f"error: run {run.run_id} used dataset v{run.dataset_version} but {args.dataset} is "
+            f"v{dataset.version}; the emails and ideal summaries may not match",
+            file=sys.stderr,
+        )
+        return 2
+
+    sample = stratified_sample(judged_results(run), args.n, args.seed)
+    write_sample_csv(sample, dataset, out)
+    print(f"wrote {len(sample)} cases from run {run.run_id} to {out}")
+    print("Fill in human_score (1 to 5) for every row using the judge's rubric, then run `mrd judge-agreement`.")
+    return 0
+
+
+def cmd_judge_agreement(args: argparse.Namespace) -> int:
+    try:
+        run = load_run(args.run, args.db)
+        pairs = read_scored_csv(args.csv, run)
+    except KeyError as exc:
+        print(f"error: {exc.args[0]}", file=sys.stderr)
+        return 2
+    except AgreementInputError as exc:
+        for problem in exc.problems:
+            print(f"error: {problem}", file=sys.stderr)
+        return 2
+
+    n = len(pairs)
+    threshold = run.summary_threshold
+    exact = exact_agreement(pairs)
+    pass_fail = pass_fail_agreement(pairs, threshold)
+    kappa = quadratic_weighted_kappa(pairs)
+
+    print(f"Judge vs human: run {run.run_id}, judge {run.judge_model} {run.judge_version}, {n} cases")
+    print(f"exact agreement        {exact:.1%}  ({round(exact * n)}/{n})")
+    print(f"pass/fail agreement    {pass_fail:.1%}  ({round(pass_fail * n)}/{n}, pass at >= {threshold})")
+    if kappa is None:
+        print("weighted kappa         undefined (both raters used a single score)")
+    else:
+        print(f"weighted kappa         {kappa:.2f}  (quadratic)")
+    print()
+    print("rows: human score, columns: judge score")
+    print("       " + "".join(f"{s:>5}" for s in SCORES))
+    for score, row in zip(SCORES, confusion_matrix(pairs)):
+        print(f"{score:>7}" + "".join(f"{count:>5}" for count in row))
+    return 0
+
+
 def main() -> None:
     load_dotenv()
     # Windows consoles default to cp1252, which cannot print emoji or arrows. Replace them instead of
@@ -397,6 +475,23 @@ def main() -> None:
     compare.add_argument("--markdown", help="Also write a Markdown summary here, for a PR comment")
     compare.add_argument("--notify", action="store_true", help="Send the result to Slack if SLACK_WEBHOOK_URL is set")
     compare.set_defaults(func=cmd_compare)
+
+    export = sub.add_parser(
+        "export-judge-sample", help="Write a CSV of judged cases for blind human scoring (no judge scores)"
+    )
+    export.add_argument("--run", required=True, help="Run id to sample from")
+    export.add_argument("--n", type=int, default=30, help="Number of cases (default 30)")
+    export.add_argument("--seed", type=int, default=0, help="Random seed, so the sample can be reproduced")
+    export.add_argument("--out", help="CSV path (default judge_sample_<run id>.csv)")
+    export.add_argument("--dataset", default=str(DEFAULT_DATASET_PATH), help="Dataset JSON, for emails and ideal summaries")
+    export.add_argument("--db", default=db_path, help="Path to the SQLite run history (env MRD_DB)")
+    export.set_defaults(func=cmd_export_judge_sample)
+
+    agreement = sub.add_parser("judge-agreement", help="Compare human scores in a filled sample CSV with the judge")
+    agreement.add_argument("--csv", required=True, help="Sample CSV with human_score filled in")
+    agreement.add_argument("--run", required=True, help="Run id the sample was exported from")
+    agreement.add_argument("--db", default=db_path, help="Path to the SQLite run history (env MRD_DB)")
+    agreement.set_defaults(func=cmd_judge_agreement)
 
     args = parser.parse_args()
     sys.exit(args.func(args))

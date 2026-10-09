@@ -1,6 +1,11 @@
 # LLM Regression Detection
 
-A CI gate for an LLM feature. Every pull request that changes a prompt or the golden dataset is evaluated against the production prompt on 100 hand-labeled cases. The result is posted on the PR, and a critical regression blocks the merge.
+[![tests](https://github.com/mohamedchouiki97-pixel/llm-regression-detection/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/mohamedchouiki97-pixel/llm-regression-detection/actions/workflows/tests.yml)
+[![eval-main](https://github.com/mohamedchouiki97-pixel/llm-regression-detection/actions/workflows/eval-main.yml/badge.svg?branch=main)](https://github.com/mohamedchouiki97-pixel/llm-regression-detection/actions/workflows/eval-main.yml)
+
+A CI gate for an LLM feature. Every pull request that changes a prompt or the golden dataset is evaluated against the production prompt on 100 labeled cases. The result is posted on the PR, and a critical regression blocks the merge.
+
+This is a public reimplementation of an evaluation system I built for a client. The classifier and dataset are stand-ins because the client's data is confidential; the gate design is the same.
 
 The feature under test is a deliberately simple customer support email classifier (gpt-4o-mini: one category plus a one-sentence summary). The product is the evaluation machinery around it.
 
@@ -49,7 +54,7 @@ uv run mrd validate-dataset            # check the golden dataset, print coverag
 uv run mrd classify --email "I was charged twice this month"
 uv run mrd run                         # evaluate the active prompt on all 100 cases (about $0.15)
 uv run mrd compare                     # compare the latest run with the latest clean run on main
-uv run pytest                          # 178 tests, no API calls
+uv run pytest                          # 195 tests, no API calls
 ```
 
 `mrd compare` prints the verdict and writes `reports/<run_id>.html`. It exits 1 on fail, which is what CI uses.
@@ -72,7 +77,7 @@ The dataset is [data/golden.json](data/golden.json). Labels follow [data/LABELIN
 
 1. If the case depends on a rule the guide does not cover, update the guide first.
 2. Add the case. The id is `gc-` plus the next unused number. **Never reuse an id**, even after deleting a case, because run comparisons match cases by id.
-3. Assign `split` by the mechanical rule: within each (category, difficulty) group sorted by id, every third case is `test`. Do not choose splits by hand.
+3. Assign `split` by the mechanical rule: within each (category, difficulty) group sorted by id, every third case is `test`. Do not choose splits by hand. Prompts are tuned by looking only at dev cases; test cases are held out to check that a gain generalizes. The gate still scores all 100, because its job is to catch a regression anywhere, so read the split row in the report: a gain on dev that does not show on test is probably overfitting. v2 was tuned on dev and still improved on test (dev 64/70 to 67/70, test 28/30 to 30/30).
 4. Bump `version` and add a changelog entry. Validation fails if the version has no changelog entry.
 5. Run `uv run mrd validate-dataset`. It reports all errors at once with case ids, and warns about duplicate emails and thin categories.
 
@@ -93,7 +98,19 @@ Every setting has a default, an environment variable, and a command line flag (t
 | `MRD_DB`, `MRD_REPORT_DIR` | `runs.db`, `reports/` | Where history and reports go |
 | `SLACK_WEBHOOK_URL`, `REPORT_URL` | unset | Slack posting and the report link in messages |
 
-Why these values: three identical runs flipped 0 cases, so a 3 point warning is well above noise for this prompt ([docs/judge_noise.md](docs/judge_noise.md)). One case is 1 point, so tighter thresholds would react to single flips. If you change the judge, the dataset, or the model, measure noise again before trusting the thresholds.
+Why these values: three identical runs flipped 0 cases, so a 3 point warning is well above noise for this prompt ([docs/judge_noise.md](docs/judge_noise.md)). One case is 1 point, so tighter thresholds would react to single flips. If you change the judge, the dataset, or the model, measure noise again before trusting the thresholds. Changing the judge model or rubric means bumping `JUDGE_VERSION` in `src/scoring.py`, which, like a dataset change, starts a new comparison history.
+
+### Check the judge against a human
+
+The gate trusts the judge's summary scores, so check them against your own:
+
+```sh
+uv run mrd export-judge-sample --run <id> --n 30     # CSV without the judge's scores
+# fill in human_score (1 to 5) using the rubric in src/scoring.py
+uv run mrd judge-agreement --csv judge_sample_<id>.csv --run <id>
+```
+
+It reports exact and pass/fail agreement and quadratic weighted kappa. Method and results: [docs/judge_agreement.md](docs/judge_agreement.md).
 
 ### Read a report
 
@@ -112,7 +129,8 @@ src/
   golden.py         dataset loading, cross case checks, coverage table
   runner.py         async runner: concurrency limit, retries, cache, run record
   cache.py          file cache of LLM responses for cheap development reruns
-  scoring.py        category match, gpt-4o judge with a written rubric, cost
+  scoring.py        category match, gpt-4o judge (pinned snapshot) with a written rubric, cost
+  agreement.py      judge vs human sample export and agreement statistics
   store.py          SQLite run history, baseline and history lookups
   compare.py        diff, thresholds, McNemar exact test, drift, final status
   report.py         HTML report with an inline SVG trend chart, PR comment Markdown
@@ -122,7 +140,7 @@ templates/          Jinja2 report template
 .github/workflows/  eval-pr (the gate), eval-main (history), tests (pytest and Docker)
 ```
 
-A run classifies every case, has gpt-4o judge each summary against the ideal one (reasoning first, then a 1 to 5 score), and stores the run and every per-case result in SQLite. A case passes when the category matches and the summary scores at least 4. A comparison pairs two runs by case id.
+A run classifies every case, has gpt-4o (pinned to the `gpt-4o-2024-08-06` snapshot) judge each summary against the ideal one (reasoning first, then a 1 to 5 score), and stores the run and every per-case result in SQLite. A case passes when the category matches and the summary scores at least 4. A comparison pairs two runs by case id.
 
 ## Design decisions
 
@@ -157,15 +175,21 @@ History and reports land in `./out`. The image contains no `.git`, so runs are l
 
 ## Limitations
 
-- **The dataset is synthetic.** The 100 cases were generated by Claude, triaged by a second Claude review, then spot-checked and corrected by hand; every case carries a `synthetic` tag. Real, anonymized production emails would be the next step.
+- **The dataset is synthetic.** The 100 cases were generated by Claude, triaged by a second Claude review, then reviewed and corrected by a human; every case carries a `synthetic` tag. It stands in for the client's confidential data (see the top of this README).
 - **100 cases limit statistical power.** v2's +4 points (5 improvements, 1 regression) is not significant (p = 0.22). It is probably real, but the report says "not proven", and that is correct.
 - **The judge is generous with good summaries.** It gave only 4s and 5s to decent prompts. It does score bad summaries low (2s and 3s for the terse prompt), but the pass threshold sits close to its noise band.
+- **The judge agrees with a human only fairly.** On 30 human-scored summaries from the terse prompt, quadratic weighted kappa was 0.35 and pass/fail agreement 60%. The judge was the stricter one, often penalizing details that are in the email but not in the reference summary. That errs toward false alarms, not missed regressions. See [docs/judge_agreement.md](docs/judge_agreement.md).
 - **The test split is slightly contaminated.** While fixing v2's pricing rule, one test case (gc-029) was inspected.
 - **Slack is wired but not connected.** Messages are built and previewed; posting needs a webhook secret.
+
+## How this was built
+
+Built with Claude Code. I designed the phases, the gate logic, and the labeling guide, and reviewed every change.
 
 ## More
 
 - [PLAN.md](PLAN.md): the phased build plan this project followed
 - [docs/three-signals.md](docs/three-signals.md): why thresholds, significance, drift, and error rate are separate
 - [docs/judge_noise.md](docs/judge_noise.md): how much identical runs vary
+- [docs/judge_agreement.md](docs/judge_agreement.md): how well the judge agrees with a human (kappa 0.35)
 - [experiments/degraded.yaml](experiments/degraded.yaml): a deliberately bad prompt for demos

@@ -1,4 +1,5 @@
 import asyncio
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -14,7 +15,7 @@ from src.models import (
     JudgeVerdict,
     Split,
 )
-from src.scoring import JudgeError, build_judge_messages, estimate_cost, judge_summary, score_case
+from src.scoring import JUDGE_MODEL, JudgeError, build_judge_messages, estimate_cost, judge_summary, score_case
 
 CASE = GoldenCase(
     id="gc-007",
@@ -175,6 +176,12 @@ def test_judge_summary_returns_verdict_and_usage():
     assert call["model"] == "gpt-4o"
     assert call["temperature"] == 0
     assert call["response_format"] is JudgeVerdict
+
+
+def test_judge_model_is_a_dated_snapshot():
+    # An undated alias can be repointed by OpenAI, which would change scores without a version bump.
+    assert re.fullmatch(r"gpt-4o-\d{4}-\d{2}-\d{2}", JUDGE_MODEL)
+    assert estimate_cost(JUDGE_MODEL, 1000, 100) is not None
 
 
 def test_judge_refusal_raises():

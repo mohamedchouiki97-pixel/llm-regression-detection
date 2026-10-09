@@ -73,7 +73,7 @@ class Split(str, Enum):
 
 
 class GoldenCase(BaseModel):
-    """One hand-labeled test case. Ids are stable across dataset versions and never reused."""
+    """One labeled test case. Ids are stable across dataset versions and never reused."""
 
     model_config = ConfigDict(extra="forbid")
 
